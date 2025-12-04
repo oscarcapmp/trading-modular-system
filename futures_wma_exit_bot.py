@@ -100,7 +100,7 @@ def get_max_leverage_symbol(client: UMFutures, symbol: str) -> int:
 
 
 # ==========================================================
-# COMISIONES: LECTURA DESDE TRADES DE FUTUROS
+# COMISIONES: LECTURA DESDE TRADES (NO USADA AHORA, PERO DISPONIBLE)
 # ==========================================================
 def get_commission_for_order_usdt(
     client: UMFutures,
@@ -112,19 +112,15 @@ def get_commission_for_order_usdt(
     """
     Lee los trades de Futuros para el símbolo y suma la comisión
     asociada al orderId dado, convertida a USDT.
-    - Si la comisión está en USDT, se suma directo.
-    - Si está en el activo base (BTC, etc.), se multiplica por el precio del fill.
-    - Si está en otro asset (BNB, etc.), se aproxima usando ref_price.
+    (Actualmente NO se usa, dejamos la función por si la quieres en otra versión.)
     """
     total = 0.0
     try:
-        # Usamos orderId para filtrar directamente los trades de esa orden
-        trades = client.user_trades(symbol=symbol, orderId=order_id)
-        if not trades:
-            print(f"⚠️ No se encontraron trades para orderId {order_id} en {symbol}.")
-            return 0.0
-
+        trades = client.user_trades(symbol=symbol, limit=1000)
         for t in trades:
+            if t.get("orderId") != order_id:
+                continue
+
             commission = float(t.get("commission", "0") or 0.0)
             asset = t.get("commissionAsset", "")
             price_fill = float(t.get("price", str(ref_price)) or ref_price)
@@ -137,10 +133,7 @@ def get_commission_for_order_usdt(
             elif asset == base_asset:
                 total += commission * price_fill
             else:
-                # Por ejemplo, si la comisión fue en BNB, aproximamos con ref_price
                 total += commission * ref_price
-
-        print(f"[COMISIONES] orderId {order_id} -> comisión total aprox: {total:.6f} USDT")
 
     except Exception as e:
         print(f"⚠️ No se pudieron obtener comisiones para orderId {order_id}: {e}")
@@ -372,6 +365,7 @@ def ejecutar_trailing_stop_futuros(
     simular: bool,
     side: str,  # "long" o "short"
     entry_order_id: int | None = None,
+    balance_inicial_futuros: float | None = None,
 ):
     last_state = None
     last_closed_close = None
@@ -499,7 +493,7 @@ def ejecutar_trailing_stop_futuros(
     duration_sec = trade_end_time - trade_start_time
     duration_min = duration_sec / 60.0
 
-    # P&L según el lado
+    # P&L según el lado (P&G teórico antes de comisiones)
     if exit_price_used is not None and entry_exec_price is not None:
         if side == "long":
             pnl_bruto_usdt = (exit_price_used - entry_exec_price) * qty_est
@@ -520,44 +514,51 @@ def ejecutar_trailing_stop_futuros(
         else:
             stop_pct = 0.0
 
-    # ==== Cálculo de comisiones reales (solo en modo REAL) ====
-    total_commission_usdt = 0.0
-    if not simular:
-        if entry_order_id is not None:
-            total_commission_usdt += get_commission_for_order_usdt(
-                client=client,
-                symbol=symbol,
-                base_asset=base_asset,
-                order_id=entry_order_id,
-                ref_price=entry_exec_price
-            )
-        if exit_order_id is not None and exit_price_used is not None:
-            total_commission_usdt += get_commission_for_order_usdt(
-                client=client,
-                symbol=symbol,
-                base_asset=base_asset,
-                order_id=exit_order_id,
-                ref_price=exit_price_used
-            )
-
-    # P&L porcentual vs margen (para riesgo/beneficio)
+    # % P&G bruto sobre margen (para riesgo/beneficio)
     if entry_margin_usdt != 0:
         pnl_bruto_pct = (pnl_bruto_usdt / entry_margin_usdt) * 100
     else:
         pnl_bruto_pct = 0.0
-
-    pnl_neto_usdt = pnl_bruto_usdt - total_commission_usdt
-    if entry_margin_usdt != 0:
-        pnl_neto_pct = (pnl_neto_usdt / entry_margin_usdt) * 100
-    else:
-        pnl_neto_pct = 0.0
 
     if stop_pct > 0:
         rr = pnl_bruto_pct / stop_pct
     else:
         rr = None
 
-    # ==== RESUMEN EN FORMATO SOLICITADO ====
+    # ===== CÁLCULO POR BALANCE DISPONIBLE DE FUTUROS =====
+    # Balance inicial viene del main / estrategia
+    bal_ini = balance_inicial_futuros if balance_inicial_futuros is not None else 0.0
+
+    # Balance final: se vuelve a leer de Futuros (solo REAL)
+    if not simular and balance_inicial_futuros is not None:
+        try:
+            bal_fin = get_futures_usdt_balance(client)
+        except Exception as e:
+            print(f"⚠️ No se pudo leer balance final de Futuros: {e}")
+            bal_fin = bal_ini
+    else:
+        # En simulación asumimos que el neto = P&G teórico
+        bal_fin = bal_ini + pnl_bruto_usdt
+
+    # P&G neto real de la cuenta (Utilidad)
+    pnl_real_usdt = bal_fin - bal_ini
+
+    # Comisión implícita = P&G teórico − P&G real
+    commission_usdt = pnl_bruto_usdt - pnl_real_usdt
+
+    # % neto sobre margen
+    if entry_margin_usdt != 0:
+        pnl_neto_pct = (pnl_real_usdt / entry_margin_usdt) * 100
+    else:
+        pnl_neto_pct = 0.0
+
+    # % de aporte al balance de Futuros
+    if bal_ini != 0:
+        aporte_balance_pct = (pnl_real_usdt / bal_ini) * 100
+    else:
+        aporte_balance_pct = 0.0
+
+    # ===== RESUMEN EN FORMATO SOLICITADO =====
     lado_txt = "LONG" if side == "long" else "SHORT"
 
     # Apalancamiento máximo disponible (según función de arriba)
@@ -565,12 +566,6 @@ def ejecutar_trailing_stop_futuros(
 
     # Inversión apalancada ≈ notional de la operación
     inversion_apalancada = qty_est * entry_exec_price if entry_exec_price is not None else 0.0
-
-    # Balance inicial = margen asignado a la operación
-    balance_inicial = entry_margin_usdt
-
-    # Balance final = balance inicial + utilidad neta
-    balance_final = balance_inicial + pnl_neto_usdt
 
     # Retorno de la inversión (movimiento en % del precio)
     if exit_price_used is not None and entry_exec_price is not None and entry_exec_price != 0:
@@ -581,16 +576,10 @@ def ejecutar_trailing_stop_futuros(
     else:
         retorno_mov_pct = 0.0
 
-    # % de aporte al balance (utilidad neta vs margen)
-    if balance_inicial != 0:
-        aporte_balance_pct = (pnl_neto_usdt / balance_inicial) * 100
-    else:
-        aporte_balance_pct = 0.0
-
     print(f"========== RESUMEN DE LA OPERACIÓN FUTUROS ({lado_txt} TRAILING) ==========")
     print(f"Apalancamiento máximo disponible:\t{max_lev_disp:.0f}x")
     print(f"Inversión apalancada\t\t\t{inversion_apalancada:.4f}")
-    print(f"Balance de cuenta inicial\t\t{balance_inicial:.4f}")
+    print(f"Balance de cuenta inicial\t\t{bal_ini:.4f}")
     print(f"Precio de entrada\t\t\t{entry_exec_price:.4f}")
     if exit_price_used is not None:
         print(f"Precio de salida\t\t\t{exit_price_used:.4f}")
@@ -606,10 +595,10 @@ def ejecutar_trailing_stop_futuros(
         print("Riesgo/Beneficio\t\t\tN/A")
 
     print(f"Ganancia/pérdida antes de comisiones\t{pnl_bruto_usdt:.4f}")
-    print(f"Comisión\t\t\t\t{total_commission_usdt:.4f}")
-    print(f"Utilidad\t\t\t\t{pnl_neto_usdt:.4f}")
-    print(f"P&G neto final\t\t\t\t{pnl_neto_usdt:.4f}")
-    print(f"Balance de cuenta final\t\t\t{balance_final:.4f}")
+    print(f"Comisión\t\t\t\t{commission_usdt:.4f}")
+    print(f"Utilidad\t\t\t\t{pnl_real_usdt:.4f}")
+    print(f"P&G neto final\t\t\t\t{pnl_real_usdt:.4f}")
+    print(f"Balance de cuenta final\t\t\t{bal_fin:.4f}")
     print(f"% de aporte al balance\t\t\t{aporte_balance_pct:.4f}%")
     print(f"Duración operación (min)\t\t{duration_min:.2f}")
     print("==========================================================\n")
@@ -787,6 +776,7 @@ def run_long_strategy(
         simular=simular,
         side="long",
         entry_order_id=entry_order_id,
+        balance_inicial_futuros=balance_usdt,
     )
 
 
@@ -962,6 +952,7 @@ def run_short_strategy(
         simular=simular,
         side="short",
         entry_order_id=entry_order_id,
+        balance_inicial_futuros=balance_usdt,
     )
 
 
@@ -1115,6 +1106,7 @@ def main():
             simular=simular,
             side=side_input,
             entry_order_id=None,
+            balance_inicial_futuros=balance_usdt,
         )
 
     else:
