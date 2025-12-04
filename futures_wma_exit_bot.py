@@ -112,14 +112,19 @@ def get_commission_for_order_usdt(
     """
     Lee los trades de Futuros para el símbolo y suma la comisión
     asociada al orderId dado, convertida a USDT.
+    - Si la comisión está en USDT, se suma directo.
+    - Si está en el activo base (BTC, etc.), se multiplica por el precio del fill.
+    - Si está en otro asset (BNB, etc.), se aproxima usando ref_price.
     """
     total = 0.0
     try:
-        trades = client.user_trades(symbol=symbol, limit=1000)
-        for t in trades:
-            if t.get("orderId") != order_id:
-                continue
+        # Usamos orderId para filtrar directamente los trades de esa orden
+        trades = client.user_trades(symbol=symbol, orderId=order_id)
+        if not trades:
+            print(f"⚠️ No se encontraron trades para orderId {order_id} en {symbol}.")
+            return 0.0
 
+        for t in trades:
             commission = float(t.get("commission", "0") or 0.0)
             asset = t.get("commissionAsset", "")
             price_fill = float(t.get("price", str(ref_price)) or ref_price)
@@ -132,7 +137,10 @@ def get_commission_for_order_usdt(
             elif asset == base_asset:
                 total += commission * price_fill
             else:
+                # Por ejemplo, si la comisión fue en BNB, aproximamos con ref_price
                 total += commission * ref_price
+
+        print(f"[COMISIONES] orderId {order_id} -> comisión total aprox: {total:.6f} USDT")
 
     except Exception as e:
         print(f"⚠️ No se pudieron obtener comisiones para orderId {order_id}: {e}")
