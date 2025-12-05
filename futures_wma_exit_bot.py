@@ -38,6 +38,8 @@ def get_futures_client():
 
 
 def wma(values, length: int):
+    if length <= 0:
+        return None
     if len(values) < length:
         return None
     weights = list(range(1, length + 1))
@@ -732,14 +734,23 @@ def run_long_strategy(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = esperar_entrada_cruce_fut(
-        client=client,
-        symbol=symbol,
-        interval=interval,
-        wma_entry_len=wma_entry_len,
-        sleep_seconds=sleep_seconds,
-        side="long",
-    )
+    # === ENTRADA: por cruce de WMA o a mercado si WMA=0 ===
+    if wma_entry_len == 0:
+        ticker = client.ticker_price(symbol=symbol)
+        entry_price_ref = float(ticker["price"])
+        print(
+            f"\n[ENTRADA MARKET LONG] WMA de ENTRADA = 0 → "
+            f"comprando a mercado al precio actual {entry_price_ref:.4f}.\n"
+        )
+    else:
+        entry_price_ref = esperar_entrada_cruce_fut(
+            client=client,
+            symbol=symbol,
+            interval=interval,
+            wma_entry_len=wma_entry_len,
+            sleep_seconds=sleep_seconds,
+            side="long",
+        )
 
     if entry_price_ref is None:
         print("No se ejecutó entrada. Saliendo.")
@@ -756,7 +767,7 @@ def run_long_strategy(
         NOTIONAL_MIN = 100.0
         if qty_est < min_qty:
             notional_min_qty = min_qty * entry_price_ref
-            print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")
+            print("\n❌ Tras la entrada, la cantidad queda por debajo del minQty.")
             print(f"Precio entrada ref: {entry_price_ref:.4f}, minQty: {min_qty}, qty_est: {qty_est}")
             print(f"Notional mínimo por minQty: {notional_min_qty:.4f} USDT")
             print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
@@ -764,7 +775,7 @@ def run_long_strategy(
 
         notional_est = qty_est * entry_price_ref
         if notional_est < NOTIONAL_MIN:
-            print("\n❌ Tras el cruce, la orden NO alcanza el notional mínimo de Binance Futuros.")
+            print("\n❌ Tras la entrada, la orden NO alcanza el notional mínimo de Binance Futuros.")
             print(f"Notional estimado: {notional_est:.4f} USDT, mínimo requerido: {NOTIONAL_MIN:.4f} USDT")
             print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
             return
@@ -907,14 +918,23 @@ def run_short_strategy(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = esperar_entrada_cruce_fut(
-        client=client,
-        symbol=symbol,
-        interval=interval,
-        wma_entry_len=wma_entry_len,
-        sleep_seconds=sleep_seconds,
-        side="short",
-    )
+    # === ENTRADA: por cruce de WMA o a mercado si WMA=0 ===
+    if wma_entry_len == 0:
+        ticker = client.ticker_price(symbol=symbol)
+        entry_price_ref = float(ticker["price"])
+        print(
+            f"\n[ENTRADA MARKET SHORT] WMA de ENTRADA = 0 → "
+            f"vendiendo a mercado al precio actual {entry_price_ref:.4f}.\n"
+        )
+    else:
+        entry_price_ref = esperar_entrada_cruce_fut(
+            client=client,
+            symbol=symbol,
+            interval=interval,
+            wma_entry_len=wma_entry_len,
+            sleep_seconds=sleep_seconds,
+            side="short",
+        )
 
     if entry_price_ref is None:
         print("No se ejecutó entrada. Saliendo.")
@@ -931,7 +951,7 @@ def run_short_strategy(
         NOTIONAL_MIN = 100.0
         if qty_est < min_qty:
             notional_min_qty = min_qty * entry_price_ref
-            print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")
+            print("\n❌ Tras la entrada, la cantidad queda por debajo del minQty.")
             print(f"Precio entrada ref: {entry_price_ref:.4f}, minQty: {min_qty}, qty_est: {qty_est}")
             print(f"Notional mínimo por minQty: {notional_min_qty:.4f} USDT")
             print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
@@ -939,7 +959,7 @@ def run_short_strategy(
 
         notional_est = qty_est * entry_price_ref
         if notional_est < NOTIONAL_MIN:
-            print("\n❌ Tras el cruce, la orden NO alcanza el notional mínimo de Binance Futuros.")
+            print("\n❌ Tras la entrada, la orden NO alcanza el notional mínimo de Binance Futuros.")
             print(f"Notional estimado: {notional_est:.4f} USDT, mínimo requerido: {NOTIONAL_MIN:.4f} USDT")
             print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
             return
@@ -1042,7 +1062,9 @@ def main():
     interval = input("Marco de tiempo (ej: 1m, 5m, 15m, 1h): ").strip() or "1m"
     sleep_seconds = int(input("Segundos entre chequeos (ej: 15): ").strip() or "15")
 
-    wma_entry_len = int(input("Longitud de WMA de ENTRADA (ej: 89): ").strip() or "89")
+    wma_entry_len = int(
+        input("Longitud de WMA de ENTRADA (ej: 89, 0 = entrada a mercado): ").strip() or "89"
+    )
     wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
 
     wait_close_input = input("¿Esperar cierre REAL de la vela para el STOP? (true/false): ").strip().lower() or "true"
