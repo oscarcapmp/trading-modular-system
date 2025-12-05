@@ -100,7 +100,7 @@ def get_max_leverage_symbol(client: UMFutures, symbol: str) -> int:
 
 
 # ==========================================================
-# COMISIONES: LECTURA DESDE TRADES (NO USADA AHORA, PERO DISPONIBLE)
+# COMISIONES: LECTURA DESDE TRADES DE FUTUROS
 # ==========================================================
 def get_commission_for_order_usdt(
     client: UMFutures,
@@ -112,7 +112,6 @@ def get_commission_for_order_usdt(
     """
     Lee los trades de Futuros para el símbolo y suma la comisión
     asociada al orderId dado, convertida a USDT.
-    (Actualmente NO se usa, dejamos la función por si la quieres en otra versión.)
     """
     total = 0.0
     try:
@@ -139,6 +138,59 @@ def get_commission_for_order_usdt(
         print(f"⚠️ No se pudieron obtener comisiones para orderId {order_id}: {e}")
 
     return total
+
+
+# ==========================================================
+# FRENO DE EMERGENCIA – STOP LIMIT
+# ==========================================================
+def cancelar_orden_segura(client: UMFutures, symbol: str, order_id: int | None):
+    if order_id is None:
+        return
+    try:
+        client.cancel_order(symbol=symbol, orderId=order_id)
+        print(f"[FRENO EMERGENCIA] Orden {order_id} cancelada correctamente.")
+    except Exception as e:
+        print(f"⚠️ No se pudo cancelar la orden de freno de emergencia {order_id}: {e}")
+
+
+def colocar_freno_emergencia(
+    client: UMFutures,
+    symbol: str,
+    side: str,          # "long" o "short"
+    qty_str: str,
+    stop_price: float,
+) -> int | None:
+    """
+    Crea un STOP LIMIT (freno de emergencia) reduceOnly.
+    LONG  -> side de orden = SELL
+    SHORT -> side de orden = BUY
+    """
+    order_side = "SELL" if side == "long" else "BUY"
+    # Para simplificar, usamos mismo precio para stopPrice y limit
+    stop_str = f"{stop_price:.2f}"
+
+    print(
+        f"[FRENO EMERGENCIA] Creando STOP LIMIT {order_side} "
+        f"en {stop_str} para cantidad {qty_str} (reduceOnly)..."
+    )
+
+    try:
+        resp = client.new_order(
+            symbol=symbol,
+            side=order_side,
+            type="STOP",
+            quantity=qty_str,
+            stopPrice=stop_str,
+            price=stop_str,
+            timeInForce="GTC",
+            reduceOnly=True,
+        )
+        order_id = resp.get("orderId")
+        print(f"[FRENO EMERGENCIA] Orden STOP LIMIT creada. ID: {order_id}")
+        return order_id
+    except Exception as e:
+        print(f"⚠️ No se pudo crear el freno de emergencia: {e}")
+        return None
 
 
 # ==========================================================
@@ -348,7 +400,7 @@ def cerrar_posicion_market(client: UMFutures, symbol: str, simular: bool):
 
 
 # ==========================================================
-# FASE 2 – TRAILING STOP FUTUROS (LONG o SHORT)
+# FASE 2 – TRAILING STOP FUTUROS (LONG o SHORT) + FRENO EMERGENCIA
 # ==========================================================
 def ejecutar_trailing_stop_futuros(
     client: UMFutures,
@@ -356,16 +408,17 @@ def ejecutar_trailing_stop_futuros(
     base_asset: str,
     interval: str,
     sleep_seconds: int,
-    wma_stop_len: int,
+    wma_stop_len: int,              # ahora fijo internamente en 34
     wait_on_close: bool,
     qty_est: float,
     qty_str: str,
     entry_exec_price: float,
     entry_margin_usdt: float,
     simular: bool,
-    side: str,  # "long" o "short"
+    side: str,                      # "long" o "short"
     entry_order_id: int | None = None,
-    balance_inicial_futuros: float | None = None,
+    emergency_order_id: int | None = None,
+    emergency_stop_price: float | None = None,
 ):
     last_state = None
     last_closed_close = None
@@ -383,19 +436,36 @@ def ejecutar_trailing_stop_futuros(
     exit_price_used = None
     exit_order_id = None
 
+    # Estado del freno de emergencia
+    emergency_mode = "none"
+    if emergency_order_id is not None:
+        emergency_mode = "static"   # primero estático basado en distancia WMA89–34
+
+    prev_rel_89_233 = None  # para detectar cruce de WMA89 con WMA233
+
+    BASE_STOP_LEN = wma_stop_len
+
     while True:
         try:
-            closes = get_closes_futures(client, symbol, interval, limit=wma_stop_len + 3)
-            if len(closes) < wma_stop_len + 2:
+            closes = get_closes_futures(client, symbol, interval, limit=max(233, wma_stop_len) + 5)
+            if len(closes) < max(233, wma_stop_len) + 2:
                 print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
                 time.sleep(sleep_seconds)
                 continue
 
+            # Usamos siempre velas CERRADAS para cálculos de WMA "oficiales"
+            closes_closed = closes[:-1]
+
+            # WMA principal para trailing
             wma_current = wma(closes, wma_stop_len)
             wma_prev = wma(closes[:-1], wma_stop_len)
 
             close_current = closes[-1]
             close_prev = closes[-2]
+
+            # WMA para lógica del freno de emergencia
+            wma89_curr = wma(closes_closed, 89)
+            wma233_curr = wma(closes_closed, 233)
 
             # Actualizar precios extremos
             if side == "long":
@@ -414,18 +484,20 @@ def ejecutar_trailing_stop_futuros(
                 last_state = state_for_signal
                 last_closed_close = close_prev
 
+            # INFO EN TERMINAL – incluye en qué WMA de trailing vamos y estado del freno
             print(
                 f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
                 f"Close parcial: {close_current:.4f} | "
-                f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | "
-                f"Estado actual: {current_state} | Estado señal: {state_for_signal}"
+                f"WMA_STOP{BASE_STOP_LEN}: {wma_current:.4f} | "
+                f"Estado actual: {current_state} | Estado señal: {state_for_signal} | "
+                f"Freno: {emergency_mode}"
             )
 
             if close_prev != last_closed_close:
                 print(f"[STOP-CERRADA FUT] Nueva vela {interval} cerrada -> Close definitivo: {close_prev:.4f}")
                 last_closed_close = close_prev
 
-            # Cruce de salida según el lado
+            # ------ LÓGICA DE CRUCE PARA SALIDA PRINCIPAL ------
             if side == "long":
                 crossed = last_state == "above" and state_for_signal == "below"   # cruce bajista
             else:
@@ -441,6 +513,51 @@ def ejecutar_trailing_stop_futuros(
                 else:
                     motivo = "Cruce alcista (precio cruza por encima de la WMA de STOP)."
 
+            # ------ LÓGICA DE FRENO DE EMERGENCIA: PASO A DINÁMICO ------
+            # Detectamos cruce de WMA89 con WMA233
+            if wma89_curr is not None and wma233_curr is not None:
+                rel_curr = "above" if wma89_curr > wma233_curr else "below"
+
+                if prev_rel_89_233 is None:
+                    prev_rel_89_233 = rel_curr
+                else:
+                    if emergency_mode == "static":
+                        # LONG: cuando WMA89 cruza AL ALZA WMA233 -> freno pasa a seguir WMA233
+                        if side == "long" and prev_rel_89_233 == "below" and rel_curr == "above":
+                            print(
+                                "\n[FRENO EMERGENCIA] WMA89 ha cruzado AL ALZA la WMA233. "
+                                "El freno pasa de estático a dinámico (WMA233).\n"
+                            )
+                            emergency_mode = "dynamic233"
+                        # SHORT: cuando WMA89 cruza A LA BAJA WMA233 -> freno pasa a seguir WMA233
+                        if side == "short" and prev_rel_89_233 == "above" and rel_curr == "below":
+                            print(
+                                "\n[FRENO EMERGENCIA] WMA89 ha cruzado A LA BAJA la WMA233. "
+                                "El freno pasa de estático a dinámico (WMA233).\n"
+                            )
+                            emergency_mode = "dynamic233"
+
+                    prev_rel_89_233 = rel_curr
+
+            # Si el freno está en modo dinámico, actualizamos el STOP LIMIT hacia WMA233
+            if emergency_mode == "dynamic233" and wma233_curr is not None and not simular:
+                new_stop_price = wma233_curr
+                # Cancelamos el STOP LIMIT anterior y creamos uno nuevo
+                cancelar_orden_segura(client, symbol, emergency_order_id)
+                emergency_order_id = colocar_freno_emergencia(
+                    client=client,
+                    symbol=symbol,
+                    side=side,
+                    qty_str=qty_str,
+                    stop_price=new_stop_price,
+                )
+                emergency_stop_price = new_stop_price
+                print(
+                    f"[FRENO EMERGENCIA] Actualizado dinámicamente a WMA233: "
+                    f"{new_stop_price:.2f} (modo {side.upper()})."
+                )
+
+            # ------ SALIDA PRINCIPAL POR CRUCE WMA STOP ------
             if trigger_exit:
                 exit_price = close_prev if wait_on_close else close_current
                 exit_price_used = exit_price
@@ -454,6 +571,10 @@ def ejecutar_trailing_stop_futuros(
                 print(f"Salida a: {exit_price:.4f}")
                 print(f"Cantidad a cerrar: {qty_str} {base_asset}")
                 print(f"Modo: {'SIMULACIÓN' if simular else 'REAL'}\n")
+
+                # Cancelamos freno de emergencia, porque vamos a cerrar la posición
+                if not simular and emergency_order_id is not None:
+                    cancelar_orden_segura(client, symbol, emergency_order_id)
 
                 if not simular:
                     exit_side = "SELL" if side == "long" else "BUY"
@@ -493,7 +614,7 @@ def ejecutar_trailing_stop_futuros(
     duration_sec = trade_end_time - trade_start_time
     duration_min = duration_sec / 60.0
 
-    # P&L según el lado (P&G teórico antes de comisiones)
+    # P&L según el lado
     if exit_price_used is not None and entry_exec_price is not None:
         if side == "long":
             pnl_bruto_usdt = (exit_price_used - entry_exec_price) * qty_est
@@ -514,51 +635,43 @@ def ejecutar_trailing_stop_futuros(
         else:
             stop_pct = 0.0
 
-    # % P&G bruto sobre margen (para riesgo/beneficio)
+    # ==== Cálculo de comisiones reales (solo en modo REAL) ====
+    total_commission_usdt = 0.0
+    if not simular:
+        if entry_order_id is not None:
+            total_commission_usdt += get_commission_for_order_usdt(
+                client=client,
+                symbol=symbol,
+                base_asset=base_asset,
+                order_id=entry_order_id,
+                ref_price=entry_exec_price
+            )
+        if exit_order_id is not None and exit_price_used is not None:
+            total_commission_usdt += get_commission_for_order_usdt(
+                client=client,
+                symbol=symbol,
+                base_asset=base_asset,
+                order_id=exit_order_id,
+                ref_price=exit_price_used
+            )
+
+    # P&L porcentual vs margen (para riesgo/beneficio)
     if entry_margin_usdt != 0:
         pnl_bruto_pct = (pnl_bruto_usdt / entry_margin_usdt) * 100
     else:
         pnl_bruto_pct = 0.0
+
+    pnl_neto_usdt = pnl_bruto_usdt - total_commission_usdt
+    if entry_margin_usdt != 0:
+        pnl_neto_pct = (pnl_neto_usdt / entry_margin_usdt) * 100
+    else:
+        pnl_neto_pct = 0.0
 
     if stop_pct > 0:
         rr = pnl_bruto_pct / stop_pct
     else:
         rr = None
 
-    # ===== CÁLCULO POR BALANCE DISPONIBLE DE FUTUROS =====
-    # Balance inicial viene del main / estrategia
-    bal_ini = balance_inicial_futuros if balance_inicial_futuros is not None else 0.0
-
-    # Balance final: se vuelve a leer de Futuros (solo REAL)
-    if not simular and balance_inicial_futuros is not None:
-        try:
-            bal_fin = get_futures_usdt_balance(client)
-        except Exception as e:
-            print(f"⚠️ No se pudo leer balance final de Futuros: {e}")
-            bal_fin = bal_ini
-    else:
-        # En simulación asumimos que el neto = P&G teórico
-        bal_fin = bal_ini + pnl_bruto_usdt
-
-    # P&G neto real de la cuenta (Utilidad)
-    pnl_real_usdt = bal_fin - bal_ini
-
-    # Comisión implícita = P&G teórico − P&G real
-    commission_usdt = pnl_bruto_usdt - pnl_real_usdt
-
-    # % neto sobre margen
-    if entry_margin_usdt != 0:
-        pnl_neto_pct = (pnl_real_usdt / entry_margin_usdt) * 100
-    else:
-        pnl_neto_pct = 0.0
-
-    # % de aporte al balance de Futuros
-    if bal_ini != 0:
-        aporte_balance_pct = (pnl_real_usdt / bal_ini) * 100
-    else:
-        aporte_balance_pct = 0.0
-
-    # ===== RESUMEN EN FORMATO SOLICITADO =====
     lado_txt = "LONG" if side == "long" else "SHORT"
 
     # Apalancamiento máximo disponible (según función de arriba)
@@ -566,6 +679,12 @@ def ejecutar_trailing_stop_futuros(
 
     # Inversión apalancada ≈ notional de la operación
     inversion_apalancada = qty_est * entry_exec_price if entry_exec_price is not None else 0.0
+
+    # Balance inicial = margen asignado a la operación
+    balance_inicial = entry_margin_usdt
+
+    # Balance final = balance inicial + utilidad neta
+    balance_final = balance_inicial + pnl_neto_usdt
 
     # Retorno de la inversión (movimiento en % del precio)
     if exit_price_used is not None and entry_exec_price is not None and entry_exec_price != 0:
@@ -576,10 +695,16 @@ def ejecutar_trailing_stop_futuros(
     else:
         retorno_mov_pct = 0.0
 
+    # % de aporte al balance (utilidad neta vs margen)
+    if balance_inicial != 0:
+        aporte_balance_pct = (pnl_neto_usdt / balance_inicial) * 100
+    else:
+        aporte_balance_pct = 0.0
+
     print(f"========== RESUMEN DE LA OPERACIÓN FUTUROS ({lado_txt} TRAILING) ==========")
     print(f"Apalancamiento máximo disponible:\t{max_lev_disp:.0f}x")
     print(f"Inversión apalancada\t\t\t{inversion_apalancada:.4f}")
-    print(f"Balance de cuenta inicial\t\t{bal_ini:.4f}")
+    print(f"Balance de cuenta inicial\t\t{balance_inicial:.4f}")
     print(f"Precio de entrada\t\t\t{entry_exec_price:.4f}")
     if exit_price_used is not None:
         print(f"Precio de salida\t\t\t{exit_price_used:.4f}")
@@ -595,17 +720,17 @@ def ejecutar_trailing_stop_futuros(
         print("Riesgo/Beneficio\t\t\tN/A")
 
     print(f"Ganancia/pérdida antes de comisiones\t{pnl_bruto_usdt:.4f}")
-    print(f"Comisión\t\t\t\t{commission_usdt:.4f}")
-    print(f"Utilidad\t\t\t\t{pnl_real_usdt:.4f}")
-    print(f"P&G neto final\t\t\t\t{pnl_real_usdt:.4f}")
-    print(f"Balance de cuenta final\t\t\t{bal_fin:.4f}")
+    print(f"Comisión\t\t\t\t{total_commission_usdt:.4f}")
+    print(f"Utilidad\t\t\t\t{pnl_neto_usdt:.4f}")
+    print(f"P&G neto final\t\t\t\t{pnl_neto_usdt:.4f}")
+    print(f"Balance de cuenta final\t\t\t{balance_final:.4f}")
     print(f"% de aporte al balance\t\t\t{aporte_balance_pct:.4f}%")
     print(f"Duración operación (min)\t\t{duration_min:.2f}")
     print("==========================================================\n")
 
 
 # ==========================================================
-# ESTRATEGIA LONG (MODULAR)
+# ESTRATEGIA LONG (MODULAR) – con freno de emergencia
 # ==========================================================
 def run_long_strategy(
     client: UMFutures,
@@ -615,12 +740,13 @@ def run_long_strategy(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
     wait_on_close: bool,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
 ):
+    STOP_BASE_WMA = 34  # trailing principal siempre por WMA34
+
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
         return
@@ -721,6 +847,45 @@ def run_long_strategy(
     entry_margin_usdt = poder_usar / max_lev if max_lev != 0 else poder_usar
     entry_exec_price = entry_price_ref
 
+    # ----- FRENO DE EMERGENCIA: CÁLCULO AL MOMENTO DE LA ENTRADA -----
+    emergency_order_id = None
+    emergency_stop_price = None
+
+    try:
+        # Tomamos muchas velas para poder calcular WMA34, 89 y 233
+        closes = get_closes_futures(client, symbol, interval, limit=240)
+        if len(closes) >= 234:
+            closes_closed = closes[:-1]
+            wma34_entry = wma(closes_closed, 34)
+            wma89_entry = wma(closes_closed, 89)
+            wma233_entry = wma(closes_closed, 233)
+
+            print(
+                f"[FRENO EMERGENCIA] WMA34 entrada: {wma34_entry:.4f}, "
+                f"WMA89 entrada: {wma89_entry:.4f}, WMA233 entrada: {wma233_entry:.4f}"
+            )
+
+            distancia = abs(wma89_entry - wma34_entry)
+            if distancia > 0 and not simular:
+                # LONG -> stop de freno por debajo de la entrada
+                emergency_stop_price = entry_exec_price - distancia
+                emergency_order_id = colocar_freno_emergencia(
+                    client=client,
+                    symbol=symbol,
+                    side="long",
+                    qty_str=qty_str,
+                    stop_price=emergency_stop_price,
+                )
+            elif distancia > 0 and simular:
+                emergency_stop_price = entry_exec_price - distancia
+                print(
+                    f"[FRENO EMERGENCIA] (SIMULACIÓN) Stop estático calculado en: {emergency_stop_price:.2f}"
+                )
+        else:
+            print("[FRENO EMERGENCIA] No hay suficientes velas para calcular WMA34/89/233.")
+    except Exception as e:
+        print(f"[FRENO EMERGENCIA] Error calculando WMAs de arranque: {e}")
+
     if simular:
         print("SIMULACIÓN: No se envía orden de apertura real.\n")
     else:
@@ -767,7 +932,7 @@ def run_long_strategy(
         base_asset=base_asset,
         interval=interval,
         sleep_seconds=sleep_seconds,
-        wma_stop_len=wma_stop_len,
+        wma_stop_len=STOP_BASE_WMA,
         wait_on_close=wait_on_close,
         qty_est=qty_est,
         qty_str=qty_str,
@@ -776,12 +941,13 @@ def run_long_strategy(
         simular=simular,
         side="long",
         entry_order_id=entry_order_id,
-        balance_inicial_futuros=balance_usdt,
+        emergency_order_id=emergency_order_id,
+        emergency_stop_price=emergency_stop_price,
     )
 
 
 # ==========================================================
-# ESTRATEGIA SHORT (MODULAR)
+# ESTRATEGIA SHORT (MODULAR) – con freno de emergencia
 # ==========================================================
 def run_short_strategy(
     client: UMFutures,
@@ -791,12 +957,13 @@ def run_short_strategy(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
     wait_on_close: bool,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
 ):
+    STOP_BASE_WMA = 34
+
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
         return
@@ -897,6 +1064,44 @@ def run_short_strategy(
     entry_margin_usdt = poder_usar / max_lev if max_lev != 0 else poder_usar
     entry_exec_price = entry_price_ref
 
+    # ----- FRENO DE EMERGENCIA SHORT -----
+    emergency_order_id = None
+    emergency_stop_price = None
+
+    try:
+        closes = get_closes_futures(client, symbol, interval, limit=240)
+        if len(closes) >= 234:
+            closes_closed = closes[:-1]
+            wma34_entry = wma(closes_closed, 34)
+            wma89_entry = wma(closes_closed, 89)
+            wma233_entry = wma(closes_closed, 233)
+
+            print(
+                f"[FRENO EMERGENCIA] WMA34 entrada: {wma34_entry:.4f}, "
+                f"WMA89 entrada: {wma89_entry:.4f}, WMA233 entrada: {wma233_entry:.4f}"
+            )
+
+            distancia = abs(wma89_entry - wma34_entry)
+            if distancia > 0 and not simular:
+                # SHORT -> stop de freno por ENCIMA de la entrada
+                emergency_stop_price = entry_exec_price + distancia
+                emergency_order_id = colocar_freno_emergencia(
+                    client=client,
+                    symbol=symbol,
+                    side="short",
+                    qty_str=qty_str,
+                    stop_price=emergency_stop_price,
+                )
+            elif distancia > 0 and simular:
+                emergency_stop_price = entry_exec_price + distancia
+                print(
+                    f"[FRENO EMERGENCIA] (SIMULACIÓN) Stop estático calculado en: {emergency_stop_price:.2f}"
+                )
+        else:
+            print("[FRENO EMERGENCIA] No hay suficientes velas para calcular WMA34/89/233.")
+    except Exception as e:
+        print(f"[FRENO EMERGENCIA] Error calculando WMAs de arranque: {e}")
+
     if simular:
         print("SIMULACIÓN: No se envía orden de apertura real.\n")
     else:
@@ -943,7 +1148,7 @@ def run_short_strategy(
         base_asset=base_asset,
         interval=interval,
         sleep_seconds=sleep_seconds,
-        wma_stop_len=wma_stop_len,
+        wma_stop_len=STOP_BASE_WMA,
         wait_on_close=wait_on_close,
         qty_est=qty_est,
         qty_str=qty_str,
@@ -952,7 +1157,8 @@ def run_short_strategy(
         simular=simular,
         side="short",
         entry_order_id=entry_order_id,
-        balance_inicial_futuros=balance_usdt,
+        emergency_order_id=emergency_order_id,
+        emergency_stop_price=emergency_stop_price,
     )
 
 
@@ -974,8 +1180,8 @@ def main():
     sleep_seconds = int(input("Segundos entre chequeos (ej: 15): ").strip() or "15")
 
     wma_entry_len = int(input("Longitud de WMA de ENTRADA (ej: 89): ").strip() or "89")
-    wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
 
+    # El STOP principal ahora es fijo: WMA34 (y freno de emergencia aparte)
     wait_close_input = input("¿Esperar cierre REAL de la vela para el STOP? (true/false): ").strip().lower() or "true"
     wait_on_close = wait_close_input in ["true", "t", "1", "s", "si", "sí", "y", "yes"]
 
@@ -997,7 +1203,7 @@ def main():
     print("=== MENÚ DE ACCIONES ===")
     print("1) Ver posición actual en este símbolo")
     print("2) Cerrar posición completa (MARKET)")
-    print("3) Ejecutar estrategia completa: cruce WMA ENTRADA + apertura + trailing STOP (MODO QUANTFURY)")
+    print("3) Ejecutar estrategia completa: cruce WMA ENTRADA + apertura + trailing STOP + FRENO DE EMERGENCIA")
     print("4) Asumir que ya hay posición abierta y SOLO ejecutar trailing STOP\n")
 
     opcion = input("Elige una opción (1/2/3/4): ").strip()
@@ -1016,7 +1222,7 @@ def main():
     print(f"Modo:                {'SIMULACIÓN' if simular else 'REAL'}")
     print(f"Intervalo:           {interval}")
     print(f"WMA de ENTRADA:      {wma_entry_len}")
-    print(f"WMA de STOP:         {wma_stop_len}")
+    print(f"WMA de STOP base:    34 (fijo, trailing principal)")
     print(f"Sleep (segundos):    {sleep_seconds}")
     print(f"Esperar cierre STOP: {wait_on_close}")
     print(f"Apalancamiento usado: {max_lev}x")
@@ -1033,7 +1239,6 @@ def main():
                 interval=interval,
                 sleep_seconds=sleep_seconds,
                 wma_entry_len=wma_entry_len,
-                wma_stop_len=wma_stop_len,
                 wait_on_close=wait_on_close,
                 balance_usdt=balance_usdt,
                 trading_power=trading_power,
@@ -1048,7 +1253,6 @@ def main():
                 interval=interval,
                 sleep_seconds=sleep_seconds,
                 wma_entry_len=wma_entry_len,
-                wma_stop_len=wma_stop_len,
                 wait_on_close=wait_on_close,
                 balance_usdt=balance_usdt,
                 trading_power=trading_power,
@@ -1089,15 +1293,16 @@ def main():
         print(f"Precio entrada: {entry_exec_price}")
         print(f"Leverage:       {lev}x")
         print(f"Margen aprox:   {entry_margin_usdt:.4f} USDT")
-        print("Iniciando trailing WMA STOP solamente...\n")
+        print("Iniciando trailing WMA STOP (WMA34) solamente...\n")
 
+        # En este modo, NO colocamos freno de emergencia (podemos añadirlo después si quieres)
         ejecutar_trailing_stop_futuros(
             client=client,
             symbol=symbol,
             base_asset=base_asset,
             interval=interval,
             sleep_seconds=sleep_seconds,
-            wma_stop_len=wma_stop_len,
+            wma_stop_len=34,
             wait_on_close=wait_on_close,
             qty_est=qty_est,
             qty_str=qty_str,
@@ -1106,7 +1311,8 @@ def main():
             simular=simular,
             side=side_input,
             entry_order_id=None,
-            balance_inicial_futuros=balance_usdt,
+            emergency_order_id=None,
+            emergency_stop_price=None,
         )
 
     else:
