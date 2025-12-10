@@ -1,8 +1,7 @@
-# infra_futuros.py
-import os
-import time
 import math
+import os
 import platform
+import time
 
 try:
     from binance.um_futures import UMFutures
@@ -198,76 +197,3 @@ def precheck_poder_trading(client: UMFutures, symbol: str, poder_usdt: float) ->
         f"Precio ref: {price:.4f} | minQty: {min_qty} | qty_estimada: {qty_est} | notional_est: {notional_est:.4f}"
     )
     return True
-
-
-# ==========================================================
-# POSICIÓN ACTUAL / CIERRE MANUAL
-# ==========================================================
-def get_current_position(client: UMFutures, symbol: str):
-    try:
-        resp = client.get_position_risk(symbol=symbol)
-        for p in resp:
-            amt = float(p.get("positionAmt", "0"))
-            if abs(amt) > 0:
-                return p
-        return None
-    except Exception as e:
-        print(f"Error obteniendo posición actual: {e}")
-        return None
-
-
-def mostrar_posicion_actual(client: UMFutures, symbol: str):
-    pos = get_current_position(client, symbol)
-    if not pos:
-        print(f"\nℹ️ No hay posición abierta en {symbol}.")
-        return
-
-    amt = float(pos["positionAmt"])
-    side = "LONG" if amt > 0 else "SHORT"
-    entry = float(pos["entryPrice"])
-    mark = float(pos["markPrice"])
-    lev = float(pos["leverage"])
-    upnl = float(pos["unRealizedProfit"])
-
-    print("\n=== POSICIÓN ACTUAL ===")
-    print(f"Símbolo:        {symbol}")
-    print(f"Lado:           {side}")
-    print(f"Cantidad:       {amt}")
-    print(f"Precio entrada: {entry}")
-    print(f"Precio mark:    {mark}")
-    print(f"Leverage:       {lev}x")
-    print(f"uPnL:           {upnl} USDT")
-    print("========================\n")
-
-
-def cerrar_posicion_market(client: UMFutures, symbol: str, simular: bool):
-    pos = get_current_position(client, symbol)
-    if not pos:
-        print(f"\nℹ️ No hay posición abierta en {symbol} para cerrar.")
-        return
-
-    amt = float(pos["positionAmt"])
-    if amt == 0:
-        print(f"\nℹ️ No hay cantidad abierta en {symbol}.")
-        return
-
-    side = "SELL" if amt > 0 else "BUY"
-    qty = abs(amt)
-    qty_str = format_quantity(qty)
-
-    print("\n=== CIERRE MANUAL DE POSICIÓN ===")
-    print(f"Símbolo:  {symbol}")
-    print(f"Lado:     {'LONG' if amt > 0 else 'SHORT'}")
-    print(f"Orden:    {side} {qty_str} (MARKET)")
-    print(f"Modo:     {'SIMULACIÓN' if simular else 'REAL'}\n")
-
-    if simular:
-        print("SIMULACIÓN: no se envió orden real de cierre.\n")
-        return
-
-    try:
-        resp = client.new_order(symbol=symbol, side=side, type="MARKET", quantity=qty_str)
-        print("✅ Orden de cierre enviada. Respuesta de Binance:")
-        print(resp)
-    except Exception as e:
-        print(f"❌ Error al cerrar la posición: {e}")

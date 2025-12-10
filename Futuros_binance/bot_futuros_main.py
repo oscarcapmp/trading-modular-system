@@ -1,13 +1,17 @@
-# bot_futuros_main.py
 from infra_futuros import (
+    format_quantity,
     get_futures_client,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
-    mostrar_posicion_actual,
-    cerrar_posicion_market,
-    format_quantity,
 )
-from operacion import run_long_strategy, run_short_strategy
+from operacion import (
+    cerrar_posicion_market,
+    get_current_position,
+    mostrar_posicion_actual,
+    run_long_strategy,
+    run_short_strategy,
+)
+from tacticas_salida import tactica_salida_trailing_stop_wma
 
 
 def main():
@@ -107,8 +111,6 @@ def main():
             )
 
     elif opcion == "4":
-        from infra_futuros import get_current_position  # import local para evitar ciclos
-
         continuar = input("\n¿Iniciar SOLO el trailing STOP sobre una posición ya abierta? (s/n): ").strip().lower()
         if continuar not in ["s", "si", "sí", "y", "yes"]:
             print("Bot cancelado por el usuario.")
@@ -144,9 +146,7 @@ def main():
         print(f"Margen aprox:   {entry_margin_usdt:.4f} USDT")
         print("Iniciando trailing WMA STOP solamente...\n")
 
-        from tacticas_salida import ejecutar_trailing_stop_futuros
-
-        ejecutar_trailing_stop_futuros(
+        tactica_salida_trailing_stop_wma(
             client=client,
             symbol=symbol,
             base_asset=base_asset,

@@ -1,18 +1,14 @@
-# tacticas_entrada.py
 import time
-from infra_futuros import UMFutures, get_closes_futures, wma
+from infra_futuros import get_closes_futures, wma
 
 
-# ==========================================================
-# FASE 1 – ESPERAR CRUCE (ENTRADA LONG o SHORT)
-# ==========================================================
-def esperar_entrada_cruce_fut(
-    client: UMFutures,
+def tactica_entrada_cruce_wma(
+    client,
     symbol: str,
     interval: str,
     wma_entry_len: int,
     sleep_seconds: int,
-    side: str,  # "long" o "short"
+    side: str,
 ):
     if side == "long":
         print(f"\n=== [FUTUROS] Buscando ENTRADA LONG en {symbol} ===")
@@ -51,14 +47,12 @@ def esperar_entrada_cruce_fut(
                     f"estados: {prevprev_state} -> {prev_state}"
                 )
 
-                # LONG: cruce alcista (below -> above)
                 if side == "long" and prevprev_state == "below" and prev_state == "above":
                     print("\n✅ [FUTUROS] Señal de ENTRADA LONG detectada (cruce alcista WMA de ENTRADA).")
                     ticker = client.ticker_price(symbol=symbol)
                     current_price = float(ticker["price"])
                     return current_price
 
-                # SHORT: cruce bajista (above -> below)
                 if side == "short" and prevprev_state == "above" and prev_state == "below":
                     print("\n✅ [FUTUROS] Señal de ENTRADA SHORT detectada (cruce bajista WMA de ENTRADA).")
                     ticker = client.ticker_price(symbol=symbol)
@@ -75,3 +69,11 @@ def esperar_entrada_cruce_fut(
         except Exception as e:
             print(f"Error durante la fase de entrada (Futuros): {e}")
             time.sleep(sleep_seconds)
+
+
+def tactica_entrada_wma34_debajo_y_cruce_89(*args, **kwargs):
+    """
+    Validar que la WMA de 34 esté por debajo de la de 233 y 89
+    y entrar cuando el precio cruce la WMA de 89.
+    """
+    pass

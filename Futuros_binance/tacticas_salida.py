@@ -1,11 +1,10 @@
-# tacticas_salida.py
 import time
 from infra_futuros import (
+    get_closes_futures,
+    get_futures_usdt_balance,
+    get_max_leverage_symbol,
     sonar_alarma,
     wma,
-    get_closes_futuros,
-    get_futuros_usdt_balance,
-    get_max_leverage_symbol,
 )
 
 
@@ -22,36 +21,28 @@ def tactica_salida_trailing_stop_wma(
     entry_exec_price: float,
     entry_margin_usdt: float,
     simular: bool,
-    side: str,  # "long" o "short"
+    side: str,
+    entry_order_id: int | None = None,
     balance_inicial_futuros: float | None = None,
 ):
-    """
-    TÁCTICA DE SALIDA: Trailing stop con WMA.
-
-    - Para LONG: sale cuando el precio cruza de arriba hacia abajo la WMA STOP.
-    - Para SHORT: sale cuando el precio cruza de abajo hacia arriba la WMA STOP.
-
-    Mantengo el cálculo de P&L simple pero útil.
-    """
-
     last_state = None
     last_closed_close = None
 
-    # Para medir el peor movimiento en contra (stop observado)
     if side == "long":
         min_price_during_trade = entry_exec_price
-        max_price_during_trade = entry_exec_price
+        max_price_during_trade = None
     else:
-        min_price_during_trade = entry_exec_price
+        min_price_during_trade = None
         max_price_during_trade = entry_exec_price
 
     trade_start_time = time.time()
     trade_end_time = None
     exit_price_used = None
+    exit_order_id = None
 
     while True:
         try:
-            closes = get_closes_futuros(client, symbol, interval, limit=wma_stop_len + 3)
+            closes = get_closes_futures(client, symbol, interval, limit=wma_stop_len + 3)
             if len(closes) < wma_stop_len + 2:
                 print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
                 time.sleep(sleep_seconds)
@@ -63,17 +54,12 @@ def tactica_salida_trailing_stop_wma(
             close_current = closes[-1]
             close_prev = closes[-2]
 
-            # Actualizar extremos (máximo/mínimo durante la operación)
             if side == "long":
                 if close_current < min_price_during_trade:
                     min_price_during_trade = close_current
-                if close_current > max_price_during_trade:
-                    max_price_during_trade = close_current
             else:
                 if close_current > max_price_during_trade:
                     max_price_during_trade = close_current
-                if close_current < min_price_during_trade:
-                    min_price_during_trade = close_current
 
             current_state = "above" if close_current > wma_current else "below"
             prev_state = "above" if close_prev > wma_prev else "below"
@@ -85,22 +71,32 @@ def tactica_salida_trailing_stop_wma(
                 last_closed_close = close_prev
 
             print(
-                f"[TRAILING] {symbol} {interval} -> "
-                f"Close: {close_current:.4f} | WMA_STOP{wma_stop_len}: {wma_current:.4f} | "
+                f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
+                f"Close parcial: {close_current:.4f} | "
+                f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | "
                 f"Estado actual: {current_state} | Estado señal: {state_for_signal}"
             )
 
             if close_prev != last_closed_close:
-                print(f"[TRAILING] Nueva vela {interval} cerrada a {close_prev:.4f}")
+                print(f"[STOP-CERRADA FUT] Nueva vela {interval} cerrada -> Close definitivo: {close_prev:.4f}")
                 last_closed_close = close_prev
 
-            # Detectar cruce de salida
             if side == "long":
                 crossed = last_state == "above" and state_for_signal == "below"
             else:
                 crossed = last_state == "below" and state_for_signal == "above"
 
+            trigger_exit = False
+            motivo = ""
+
             if crossed:
+                trigger_exit = True
+                if side == "long":
+                    motivo = "Cruce bajista (precio cruza por debajo de la WMA de STOP)."
+                else:
+                    motivo = "Cruce alcista (precio cruza por encima de la WMA de STOP)."
+
+            if trigger_exit:
                 exit_price = close_prev if wait_on_close else close_current
                 exit_price_used = exit_price
                 trade_end_time = time.time()
@@ -108,49 +104,51 @@ def tactica_salida_trailing_stop_wma(
                 sonar_alarma()
 
                 lado_txt = "LONG" if side == "long" else "SHORT"
-                print(f"\n=== [TÁCTICA SALIDA] SEÑAL DE SALIDA {lado_txt} DETECTADA (TRAILING WMA) ===")
+                print(f"\n=== [FUTUROS] SEÑAL DE SALIDA {lado_txt} DETECTADA (WMA STOP) ===")
+                print(f"Motivo:   {motivo}")
                 print(f"Salida a: {exit_price:.4f}")
                 print(f"Cantidad a cerrar: {qty_str} {base_asset}")
                 print(f"Modo: {'SIMULACIÓN' if simular else 'REAL'}\n")
 
                 if not simular:
-                    binance_side = "SELL" if side == "long" else "BUY"
+                    exit_side = "SELL" if side == "long" else "BUY"
                     try:
-                        print(f"📤 Enviando orden MARKET {binance_side} para cerrar {lado_txt}...")
+                        print(f"📤 Enviando orden MARKET {exit_side} para cerrar {lado_txt}...")
                         exit_order = client.new_order(
                             symbol=symbol,
-                            side=binance_side,
+                            side=exit_side,
                             type="MARKET",
                             quantity=qty_str
                         )
                         print("Orden de CIERRE enviada. Respuesta de Binance:")
                         print(exit_order)
+                        exit_order_id = exit_order.get("orderId")
                     except Exception as e:
                         print(f"❌ Error al enviar la orden de cierre en Futuros: {e}")
                 else:
                     print("SIMULACIÓN: No se envió orden real de cierre.")
 
-                print("\nTáctica de salida por trailing completada.\n")
+                print("\nBot Futuros finalizado tras ejecutar la salida.\n")
                 break
 
             last_state = state_for_signal
             time.sleep(sleep_seconds)
 
         except KeyboardInterrupt:
-            print("\nBot detenido manualmente durante la táctica de salida.")
+            print("\nBot detenido manualmente durante la fase de STOP en Futuros.")
             trade_end_time = time.time()
             break
         except Exception as e:
-            print(f"Error en táctica de salida (Trailing): {e}")
+            print(f"Error en fase de STOP (Futuros): {e}")
             time.sleep(sleep_seconds)
 
-    # ===== Resumen simple =====
     if trade_end_time is None:
         trade_end_time = time.time()
 
-    duration_min = (trade_end_time - trade_start_time) / 60.0
+    duration_sec = trade_end_time - trade_start_time
+    duration_min = duration_sec / 60.0
 
-    if exit_price_used is not None:
+    if exit_price_used is not None and entry_exec_price is not None:
         if side == "long":
             pnl_bruto_usdt = (exit_price_used - entry_exec_price) * qty_est
         else:
@@ -158,63 +156,99 @@ def tactica_salida_trailing_stop_wma(
     else:
         pnl_bruto_usdt = 0.0
 
-    # Stop observado como % movimiento máximo en contra
     if side == "long":
-        worst_move_pct = (entry_exec_price - min_price_during_trade) / entry_exec_price * 100
-    else:
-        worst_move_pct = (max_price_during_trade - entry_exec_price) / entry_exec_price * 100
-
-    # Balance antes/después si se proporcionó
-    bal_ini = balance_inicial_futuros if balance_inicial_futuros is not None else 0.0
-    if bal_ini > 0:
-        if not simular:
-            try:
-                bal_fin = get_futuros_usdt_balance(client)
-            except Exception as e:
-                print(f"⚠️ No se pudo leer balance final de Futuros: {e}")
-                bal_fin = bal_ini
+        if min_price_during_trade is not None and min_price_during_trade < entry_exec_price:
+            stop_pct = (entry_exec_price - min_price_during_trade) / entry_exec_price * 100
         else:
-            bal_fin = bal_ini + pnl_bruto_usdt
-        pnl_real_usdt = bal_fin - bal_ini
+            stop_pct = 0.0
+    else:
+        if max_price_during_trade is not None and max_price_during_trade > entry_exec_price:
+            stop_pct = (max_price_during_trade - entry_exec_price) / entry_exec_price * 100
+        else:
+            stop_pct = 0.0
+
+    if entry_margin_usdt != 0:
+        pnl_bruto_pct = (pnl_bruto_usdt / entry_margin_usdt) * 100
+    else:
+        pnl_bruto_pct = 0.0
+
+    if stop_pct > 0:
+        rr = pnl_bruto_pct / stop_pct
+    else:
+        rr = None
+
+    bal_ini = balance_inicial_futuros if balance_inicial_futuros is not None else 0.0
+
+    if not simular and balance_inicial_futuros is not None:
+        try:
+            bal_fin = get_futures_usdt_balance(client)
+        except Exception as e:
+            print(f"⚠️ No se pudo leer balance final de Futuros: {e}")
+            bal_fin = bal_ini
     else:
         bal_fin = bal_ini + pnl_bruto_usdt
-        pnl_real_usdt = pnl_bruto_usdt
+
+    pnl_real_usdt = bal_fin - bal_ini
+
+    commission_usdt = pnl_bruto_usdt - pnl_real_usdt
+
+    if entry_margin_usdt != 0:
+        pnl_neto_pct = (pnl_real_usdt / entry_margin_usdt) * 100
+    else:
+        pnl_neto_pct = 0.0
+
+    if bal_ini != 0:
+        aporte_balance_pct = (pnl_real_usdt / bal_ini) * 100
+    else:
+        aporte_balance_pct = 0.0
 
     lado_txt = "LONG" if side == "long" else "SHORT"
+
     max_lev_disp = get_max_leverage_symbol(client, symbol)
-    inversion_apalancada = qty_est * entry_exec_price if entry_exec_price else 0.0
 
-    print("========== RESUMEN OPERACIÓN FUTUROS (TRAILING WMA) ==========")
-    print(f"Símbolo:\t\t\t{symbol}")
-    print(f"Lado:\t\t\t\t{lado_txt}")
-    print(f"Apalancamiento máx. ref.:\t{max_lev_disp}x")
-    print(f"Precio entrada:\t\t\t{entry_exec_price:.4f}")
-    if exit_price_used is not None:
-        print(f"Precio salida:\t\t\t{exit_price_used:.4f}")
+    inversion_apalancada = qty_est * entry_exec_price if entry_exec_price is not None else 0.0
+
+    if exit_price_used is not None and entry_exec_price is not None and entry_exec_price != 0:
+        if side == "long":
+            retorno_mov_pct = (exit_price_used - entry_exec_price) / entry_exec_price * 100
+        else:
+            retorno_mov_pct = (entry_exec_price - exit_price_used) / entry_exec_price * 100
     else:
-        print("Precio salida:\t\t\tN/D")
-    print(f"Cantidad:\t\t\t{qty_est} {base_asset}")
-    print(f"Inversión apalancada aprox.:\t{inversion_apalancada:.4f} USDT")
-    print(f"P&G bruto estimado:\t\t{pnl_bruto_usdt:.4f} USDT")
-    print(f"P&G real (si hay balance_ini):\t{pnl_real_usdt:.4f} USDT")
-    print(f"Peor movimiento en contra:\t{worst_move_pct:.4f}%")
-    print(f"Balance inicial:\t\t{bal_ini:.4f} USDT")
-    print(f"Balance final:\t\t\t{bal_fin:.4f} USDT")
-    print(f"Duración operación (min):\t{duration_min:.2f}")
-    print("==============================================================\n")
+        retorno_mov_pct = 0.0
+
+    print(f"========== RESUMEN DE LA OPERACIÓN FUTUROS ({lado_txt} TRAILING) ==========")
+    print(f"Apalancamiento máximo disponible:\t{max_lev_disp:.0f}x")
+    print(f"Inversión apalancada\t\t\t{inversion_apalancada:.4f}")
+    print(f"Balance de cuenta inicial\t\t{bal_ini:.4f}")
+    print(f"Precio de entrada\t\t\t{entry_exec_price:.4f}")
+    if exit_price_used is not None:
+        print(f"Precio de salida\t\t\t{exit_price_used:.4f}")
+    else:
+        print("Precio de salida\t\t\tN/D")
+
+    print(f"Retorno de la inversión (movimiento)\t{retorno_mov_pct:.4f}%")
+    print(f"Stop calculado\t\t\t\t{stop_pct:.4f}%")
+
+    if rr is not None:
+        print(f"Riesgo/Beneficio\t\t\t{rr:.4f}")
+    else:
+        print("Riesgo/Beneficio\t\t\tN/A")
+
+    print(f"Ganancia/pérdida antes de comisiones\t{pnl_bruto_usdt:.4f}")
+    print(f"Comisión\t\t\t\t{commission_usdt:.4f}")
+    print(f"Utilidad\t\t\t\t{pnl_real_usdt:.4f}")
+    print(f"P&G neto final\t\t\t\t{pnl_real_usdt:.4f}")
+    print(f"Balance de cuenta final\t\t\t{bal_fin:.4f}")
+    print(f"% de aporte al balance\t\t\t{aporte_balance_pct:.4f}%")
+    print(f"Duración operación (min)\t\t{duration_min:.2f}")
+    print("==========================================================\n")
 
 
-def tactica_salida_trailing_stop_3_fases(*args, **kwargs):
+def tactica_salida_trailing_3_fases(*args, **kwargs):
     """
-    TÁCTICA DE SALIDA EN 3 FASES (WMA34, WMA89, WMA233).
-
-    De salida:
-    a. Trailing stop en 3 fases, sale un porcentaje en WMA de 34,
-       otro en WMA de 89 y otro en WMA de 233.
-
-    👉 Para mantener el sistema MUY SIMPLE, esta función la dejamos como
-       'stub' (pendiente de implementar). Más adelante la puedes construir
-       usando la misma idea de tactica_salida_trailing_stop_wma pero
-       aplicando 3 cierres parciales.
+    Trailing stop en 3 fases:
+    - Un porcentaje en WMA 34
+    - Otro en WMA 89
+    - Otro en WMA 233
     """
-    print("⚠️ Táctica de salida en 3 fases aún no implementada. Usa trailing simple por ahora.")
+    pass

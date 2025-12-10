@@ -1,23 +1,86 @@
-# operacion.py
 import time
-
 from infra_futuros import (
-    UMFutures,
-    precheck_poder_trading,
-    get_lot_size_filter_futures,
     floor_to_step,
     format_quantity,
-    get_current_position,
+    get_lot_size_filter_futures,
+    precheck_poder_trading,
 )
-from tacticas_entrada import esperar_entrada_cruce_fut
-from tacticas_salida import ejecutar_trailing_stop_futuros
+from tacticas_entrada import tactica_entrada_cruce_wma
+from tacticas_salida import tactica_salida_trailing_stop_wma
 
 
-# ==========================================================
-# ESTRATEGIA LONG (MODULAR)
-# ==========================================================
-def run_long_strategy(
-    client: UMFutures,
+def get_current_position(client, symbol: str):
+    try:
+        resp = client.get_position_risk(symbol=symbol)
+        for p in resp:
+            amt = float(p.get("positionAmt", "0"))
+            if abs(amt) > 0:
+                return p
+        return None
+    except Exception as e:
+        print(f"Error obteniendo posición actual: {e}")
+        return None
+
+
+def mostrar_posicion_actual(client, symbol: str):
+    pos = get_current_position(client, symbol)
+    if not pos:
+        print(f"\nℹ️ No hay posición abierta en {symbol}.")
+        return
+
+    amt = float(pos["positionAmt"])
+    side = "LONG" if amt > 0 else "SHORT"
+    entry = float(pos["entryPrice"])
+    mark = float(pos["markPrice"])
+    lev = float(pos["leverage"])
+    upnl = float(pos["unRealizedProfit"])
+
+    print("\n=== POSICIÓN ACTUAL ===")
+    print(f"Símbolo:        {symbol}")
+    print(f"Lado:           {side}")
+    print(f"Cantidad:       {amt}")
+    print(f"Precio entrada: {entry}")
+    print(f"Precio mark:    {mark}")
+    print(f"Leverage:       {lev}x")
+    print(f"uPnL:           {upnl} USDT")
+    print("========================\n")
+
+
+def cerrar_posicion_market(client, symbol: str, simular: bool):
+    pos = get_current_position(client, symbol)
+    if not pos:
+        print(f"\nℹ️ No hay posición abierta en {symbol} para cerrar.")
+        return
+
+    amt = float(pos["positionAmt"])
+    if amt == 0:
+        print(f"\nℹ️ No hay cantidad abierta en {symbol}.")
+        return
+
+    side = "SELL" if amt > 0 else "BUY"
+    qty = abs(amt)
+    qty_str = format_quantity(qty)
+
+    print("\n=== CIERRE MANUAL DE POSICIÓN ===")
+    print(f"Símbolo:  {symbol}")
+    print(f"Lado:     {'LONG' if amt > 0 else 'SHORT'}")
+    print(f"Orden:    {side} {qty_str} (MARKET)")
+    print(f"Modo:     {'SIMULACIÓN' if simular else 'REAL'}\n")
+
+    if simular:
+        print("SIMULACIÓN: no se envió orden real de cierre.\n")
+        return
+
+    try:
+        resp = client.new_order(symbol=symbol, side=side, type="MARKET", quantity=qty_str)
+        print("✅ Orden de cierre enviada. Respuesta de Binance:")
+        print(resp)
+    except Exception as e:
+        print(f"❌ Error al cerrar la posición: {e}")
+
+
+def comprar_long_por_cruce_wma(
+    client,
     symbol: str,
     base_asset: str,
     simular: bool,
@@ -70,7 +133,7 @@ def run_long_strategy(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = esperar_entrada_cruce_fut(
+    entry_price_ref = tactica_entrada_cruce_wma(
         client=client,
         symbol=symbol,
         interval=interval,
@@ -170,7 +233,7 @@ def run_long_strategy(
 
     print("\n=== Apertura LONG realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
-    ejecutar_trailing_stop_futuros(
+    tactica_salida_trailing_stop_wma(
         client=client,
         symbol=symbol,
         base_asset=base_asset,
@@ -189,11 +252,8 @@ def run_long_strategy(
     )
 
 
-# ==========================================================
-# ESTRATEGIA SHORT (MODULAR)
-# ==========================================================
-def run_short_strategy(
-    client: UMFutures,
+def comprar_short_por_cruce_wma(
+    client,
     symbol: str,
     base_asset: str,
     simular: bool,
@@ -246,7 +306,7 @@ def run_short_strategy(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = esperar_entrada_cruce_fut(
+    entry_price_ref = tactica_entrada_cruce_wma(
         client=client,
         symbol=symbol,
         interval=interval,
@@ -346,7 +406,7 @@ def run_short_strategy(
 
     print("\n=== Apertura SHORT realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
-    ejecutar_trailing_stop_futuros(
+    tactica_salida_trailing_stop_wma(
         client=client,
         symbol=symbol,
         base_asset=base_asset,
@@ -363,3 +423,15 @@ def run_short_strategy(
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
     )
+
+
+def mantener_posicion(*args, **kwargs):
+    print("Manteniendo posición actual (placeholder).")
+
+
+def run_long_strategy(*args, **kwargs):
+    return comprar_long_por_cruce_wma(*args, **kwargs)
+
+
+def run_short_strategy(*args, **kwargs):
+    return comprar_short_por_cruce_wma(*args, **kwargs)
