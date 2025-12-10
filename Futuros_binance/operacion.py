@@ -1,141 +1,68 @@
 # operacion.py
-from infra_futuros import (
-    precheck_poder_trading,
-    get_lot_size_filter_futuros,
-    floor_to_step,
-    format_quantity,
-    get_max_leverage_symbol,
-    get_futuros_usdt_balance,
-)
-from tacticas_entrada import tactica_entrada_cruce_wma, tactica_entrada_wma34_debajo_y_cruce_89
-from tacticas_salida import tactica_salida_trailing_stop_wma
 import time
 
-
-# ==========================================================
-# POSICIÓN ACTUAL (para mantener / vender / freno de emergencia)
-# ==========================================================
-def get_posicion_actual(client, symbol: str):
-    """Devuelve el diccionario de posición actual en ese símbolo, o None si no hay."""
-    try:
-        resp = client.get_position_risk(symbol=symbol)
-        for p in resp:
-            amt = float(p.get("positionAmt", "0"))
-            if abs(amt) > 0:
-                return p
-        return None
-    except Exception as e:
-        print(f"Error obteniendo posición actual: {e}")
-        return None
-
-
-def mostrar_posicion_actual(client, symbol: str):
-    """Imprime en pantalla la posición actual."""
-    pos = get_posicion_actual(client, symbol)
-    if not pos:
-        print(f"\nℹ️ No hay posición abierta en {symbol}.")
-        return
-
-    amt = float(pos["positionAmt"])
-    side = "LONG" if amt > 0 else "SHORT"
-    entry = float(pos["entryPrice"])
-    mark = float(pos["markPrice"])
-    lev = float(pos["leverage"])
-    upnl = float(pos["unRealizedProfit"])
-
-    print("\n=== POSICIÓN ACTUAL ===")
-    print(f"Símbolo:        {symbol}")
-    print(f"Lado:           {side}")
-    print(f"Cantidad:       {amt}")
-    print(f"Precio entrada: {entry}")
-    print(f"Precio mark:    {mark}")
-    print(f"Leverage:       {lev}x")
-    print(f"uPnL:           {upnl} USDT")
-    print("========================\n")
-
-
-def cerrar_posicion_completa_market(client, symbol: str, simular: bool):
-    """Cierra la posición completa a mercado (se usa como 'freno de emergencia')."""
-    pos = get_posicion_actual(client, symbol)
-    if not pos:
-        print(f"\nℹ️ No hay posición abierta en {symbol} para cerrar.")
-        return
-
-    amt = float(pos["positionAmt"])
-    if amt == 0:
-        print(f"\nℹ️ No hay cantidad abierta en {symbol}.")
-        return
-
-    side_actual = "long" if amt > 0 else "short"
-    side_order = "SELL" if amt > 0 else "BUY"
-    qty = abs(amt)
-    qty_str = format_quantity(qty)
-
-    print("\n=== CIERRE COMPLETO (FRENO DE EMERGENCIA) ===")
-    print(f"Símbolo:  {symbol}")
-    print(f"Lado:     {side_actual.upper()}")
-    print(f"Orden:    {side_order} {qty_str} (MARKET)")
-    print(f"Modo:     {'SIMULACIÓN' if simular else 'REAL'}\n")
-
-    if simular:
-        print("SIMULACIÓN: no se envió orden real de cierre.\n")
-        return
-
-    try:
-        resp = client.new_order(symbol=symbol, side=side_order, type="MARKET", quantity=qty_str)
-        print("✅ Orden de cierre enviada. Respuesta de Binance:")
-        print(resp)
-    except Exception as e:
-        print(f"❌ Error al cerrar la posición: {e}")
+from infra_futuros import (
+    UMFutures,
+    precheck_poder_trading,
+    get_lot_size_filter_futures,
+    floor_to_step,
+    format_quantity,
+    get_current_position,
+)
+from tacticas_entrada import esperar_entrada_cruce_fut
+from tacticas_salida import ejecutar_trailing_stop_futuros
 
 
 # ==========================================================
-# OPERACIÓN: COMPRA por cruce de WMA (LONG o SHORT)
+# ESTRATEGIA LONG (MODULAR)
 # ==========================================================
-def compra_por_cruce_wma(
-    client,
+def run_long_strategy(
+    client: UMFutures,
     symbol: str,
     base_asset: str,
-    side: str,          # "long" o "short"
     simular: bool,
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
     wma_stop_len: int,
     wait_on_close: bool,
-    poder_usar: float,
+    balance_usdt: float,
+    trading_power: float,
+    max_lev: int,
 ):
-    """
-    Operación: COMPRA (apertura de posición) por cruce de WMA.
-    - Usa tactica_entrada_cruce_wma.
-    - Luego usa tactica_salida_trailing_stop_wma para cerrar.
-    """
-    balance_usdt = get_futuros_usdt_balance(client)
-    max_lev = get_max_leverage_symbol(client, symbol)
-    trading_power = balance_usdt * max_lev
+    if trading_power <= 0:
+        print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
+        return
+
+    poder_usar = float(
+        input(
+            f"Poder de trading (USDT) que deseas usar en esta entrada LONG (<= {trading_power:.4f}): "
+        ).strip()
+    )
 
     if poder_usar <= 0:
         print("❌ El poder de trading debe ser mayor que 0. Cancelando.")
-        return
-
-    if trading_power <= 0:
-        print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
         return
 
     if poder_usar > trading_power:
         print("❌ No puedes usar más poder de trading del que tienes disponible.")
         return
 
-    # Precheck rápido de poder
+    continuar = input(
+        f"\n¿Activar bot y esperar señal de ENTRADA LONG usando {poder_usar:.4f} USDT de poder? (s/n): "
+    ).strip().lower()
+    if continuar not in ["s", "si", "sí", "y", "yes"]:
+        print("Bot cancelado por el usuario.")
+        return
+
     try:
         ok_poder = precheck_poder_trading(client, symbol, poder_usar)
         if not ok_poder:
             return
     except Exception as e:
         print(f"⚠️ Error en precheck de poder: {e}")
-        print("Continuando de todas formas...\n")
+        print("Continuando de todas formas (el lote se validará de nuevo en la entrada)...\n")
 
-    # Configurar apalancamiento
     if not simular:
         try:
             print(f"\nConfigurando leverage {max_lev}x para {symbol}...")
@@ -143,25 +70,24 @@ def compra_por_cruce_wma(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    # === TÁCTICA DE ENTRADA ===
-    entry_price_ref = tactica_entrada_cruce_wma(
+    entry_price_ref = esperar_entrada_cruce_fut(
         client=client,
         symbol=symbol,
         interval=interval,
         wma_entry_len=wma_entry_len,
         sleep_seconds=sleep_seconds,
-        side=side,
+        side="long",
     )
 
     if entry_price_ref is None:
         print("No se ejecutó entrada. Saliendo.")
         return
 
-    # Calcular cantidad estimada
     raw_qty_est = poder_usar / entry_price_ref
+    entry_order_id = None
 
     try:
-        min_qty, max_qty, step_size = get_lot_size_filter_futuros(client, symbol)
+        min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
         qty_est = min(raw_qty_est, max_qty)
         qty_est = floor_to_step(qty_est, step_size)
 
@@ -171,62 +97,80 @@ def compra_por_cruce_wma(
             print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")
             print(f"Precio entrada ref: {entry_price_ref:.4f}, minQty: {min_qty}, qty_est: {qty_est}")
             print(f"Notional mínimo por minQty: {notional_min_qty:.4f} USDT")
-            print("No se abrirá la posición.\n")
+            print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
             return
 
         notional_est = qty_est * entry_price_ref
         if notional_est < NOTIONAL_MIN:
             print("\n❌ Tras el cruce, la orden NO alcanza el notional mínimo de Binance Futuros.")
             print(f"Notional estimado: {notional_est:.4f} USDT, mínimo requerido: {NOTIONAL_MIN:.4f} USDT")
-            print("No se abrirá la posición.\n")
+            print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
             return
 
         qty_str = format_quantity(qty_est)
+
+        print(f"Filtro LOT_SIZE Futuros {symbol} -> minQty={min_qty}, stepSize={step_size}, maxQty={max_qty}")
+        print(
+            f"[DEBUG] raw_qty_est: {raw_qty_est}, qty_est normalizada: {qty_est}, "
+            f"qty_str: {qty_str}, notional_est: {notional_est:.4f}"
+        )
 
     except Exception as e:
         print(f"⚠️ No se pudo obtener LOT_SIZE Futuros. Usando qty estimada sin normalizar: {e}")
         qty_est = raw_qty_est
         qty_str = format_quantity(qty_est)
 
-    print(f"\n[OPERACIÓN COMPRA] Señal de entrada {side.upper()} activada.")
+    print(f"\n[FUTUROS LONG] Señal de entrada LONG activada.")
     print(f"Precio de referencia (ticker): {entry_price_ref:.4f} USDT")
     print(f"Cantidad estimada a abrir:     {qty_str} {base_asset}")
     print(f"Poder de trading usado:        {poder_usar:.4f} USDT")
-    print(f"Leverage efectivo (aprox):     {max_lev}x\n")
+    print(f"Leverage efectivo (aprox):     {max_lev}x")
+    print("Ejecutando APERTURA LONG automáticamente...\n")
 
     entry_margin_usdt = poder_usar / max_lev if max_lev != 0 else poder_usar
     entry_exec_price = entry_price_ref
 
-    # Enviar orden de apertura
     if simular:
         print("SIMULACIÓN: No se envía orden de apertura real.\n")
     else:
         try:
-            if side == "long":
-                binance_side = "BUY"
-            else:
-                binance_side = "SELL"
-
-            print(f"📥 ENVIANDO ORDEN MARKET {binance_side} ({side.upper()} FUTUROS)...")
+            print("📥 ENVIANDO ORDEN MARKET BUY (LONG FUTUROS)...")
             entry_order = client.new_order(
                 symbol=symbol,
-                side=binance_side,
+                side="BUY",
                 type="MARKET",
                 quantity=qty_str
             )
-            print("Orden de APERTURA enviada. Respuesta de Binance:")
+            print("Orden de APERTURA LONG enviada. Respuesta de Binance:")
             print(entry_order)
+            entry_order_id = entry_order.get("orderId")
 
-            # Pequeña pausa por seguridad
             time.sleep(0.5)
+            pos = get_current_position(client, symbol)
+            if pos:
+                amt_pos = float(pos.get("positionAmt", "0"))
+                if amt_pos > 0:
+                    entry_exec_price = float(pos.get("entryPrice", entry_price_ref))
+                    lev_pos = float(pos.get("leverage", max_lev))
+                    notional_pos = abs(amt_pos) * entry_exec_price
+                    entry_margin_usdt = notional_pos / lev_pos if lev_pos != 0 else entry_margin_usdt
+                    qty_est = abs(amt_pos)
+                    qty_str = format_quantity(qty_est)
+                    print("\n[INFO] Datos reales de la posición LONG tomados de get_position_risk():")
+                    print(f"Cantidad real:   {qty_est}")
+                    print(f"Precio entrada:  {entry_exec_price}")
+                    print(f"Leverage real:   {lev_pos}x")
+                    print(f"Margen aprox:    {entry_margin_usdt:.4f} USDT\n")
+            else:
+                print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
         except Exception as e:
-            print(f"❌ Error enviando orden de apertura en Futuros: {e}")
+            print(f"❌ Error enviando orden de apertura LONG en Futuros: {e}")
             return
 
-    print("\n=== Apertura realizada (real o simulada). Iniciando TÁCTICA DE SALIDA (TRAILING WMA)... ===\n")
+    print("\n=== Apertura LONG realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
-    tactica_salida_trailing_stop_wma(
+    ejecutar_trailing_stop_futuros(
         client=client,
         symbol=symbol,
         base_asset=base_asset,
@@ -239,55 +183,183 @@ def compra_por_cruce_wma(
         entry_exec_price=entry_exec_price,
         entry_margin_usdt=entry_margin_usdt,
         simular=simular,
-        side=side,
+        side="long",
+        entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
     )
 
 
 # ==========================================================
-# OPERACIÓN: COMPRA límite o a mercado (stub)
+# ESTRATEGIA SHORT (MODULAR)
 # ==========================================================
-def compra_limit_o_market(*args, **kwargs):
-    """
-    Stub para compra por orden límite o a mercado.
+def run_short_strategy(
+    client: UMFutures,
+    symbol: str,
+    base_asset: str,
+    simular: bool,
+    interval: str,
+    sleep_seconds: int,
+    wma_entry_len: int,
+    wma_stop_len: int,
+    wait_on_close: bool,
+    balance_usdt: float,
+    trading_power: float,
+    max_lev: int,
+):
+    if trading_power <= 0:
+        print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
+        return
 
-    Aquí, más adelante, puedes implementar:
-    - Preguntar precio límite o usar precio actual.
-    - Enviar una orden LIMIT o MARKET directa sin táctica de entrada.
+    poder_usar = float(
+        input(
+            f"Poder de trading (USDT) que deseas usar en esta entrada SHORT (<= {trading_power:.4f}): "
+        ).strip()
+    )
 
-    Lo dejo así para mantener el sistema simple por ahora.
-    """
-    print("⚠️ compra_limit_o_market aún no implementada. Usa compra por cruce de WMA.")
+    if poder_usar <= 0:
+        print("❌ El poder de trading debe ser mayor que 0. Cancelando.")
+        return
 
+    if poder_usar > trading_power:
+        print("❌ No puedes usar más poder de trading del que tienes disponible.")
+        return
 
-# ==========================================================
-# OPERACIÓN: VENTA por freno de emergencia
-# ==========================================================
-def venta_freno_emergencia(client, symbol: str, simular: bool):
-    """
-    Venta por freno de emergencia:
-    - Cierra la posición completa a mercado usando cerrar_posicion_completa_market.
-    """
-    cerrar_posicion_completa_market(client, symbol, simular)
+    continuar = input(
+        f"\n¿Activar bot y esperar señal de ENTRADA SHORT usando {poder_usar:.4f} USDT de poder? (s/n): "
+    ).strip().lower()
+    if continuar not in ["s", "si", "sí", "y", "yes"]:
+        print("Bot cancelado por el usuario.")
+        return
 
+    try:
+        ok_poder = precheck_poder_trading(client, symbol, poder_usar)
+        if not ok_poder:
+            return
+    except Exception as e:
+        print(f"⚠️ Error en precheck de poder: {e}")
+        print("Continuando de todas formas (el lote se validará de nuevo en la entrada)...\n")
 
-# ==========================================================
-# OPERACIÓN: VENTA por stop limit (stub)
-# ==========================================================
-def venta_stop_limit(*args, **kwargs):
-    """
-    Stub para venta por stop limit.
-    Más adelante puedes:
-    - Calcular el precio de stop
-    - Calcular el precio límite
-    - Enviar una orden STOP_LIMIT en Binance.
-    """
-    print("⚠️ venta_stop_limit aún no implementada. Usa trailing o freno de emergencia.")
+    if not simular:
+        try:
+            print(f"\nConfigurando leverage {max_lev}x para {symbol}...")
+            client.change_leverage(symbol=symbol, leverage=max_lev)
+        except Exception as e:
+            print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
+    entry_price_ref = esperar_entrada_cruce_fut(
+        client=client,
+        symbol=symbol,
+        interval=interval,
+        wma_entry_len=wma_entry_len,
+        sleep_seconds=sleep_seconds,
+        side="short",
+    )
 
-# ==========================================================
-# OPERACIÓN: MANTENER
-# ==========================================================
-def mantener_posicion():
-    """Mantener = no hacer nada; sirve solo para tu estructura mental."""
-    print("Mantener posición: no se ejecuta compra ni venta en este ciclo.")
+    if entry_price_ref is None:
+        print("No se ejecutó entrada. Saliendo.")
+        return
+
+    raw_qty_est = poder_usar / entry_price_ref
+    entry_order_id = None
+
+    try:
+        min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
+        qty_est = min(raw_qty_est, max_qty)
+        qty_est = floor_to_step(qty_est, step_size)
+
+        NOTIONAL_MIN = 100.0
+        if qty_est < min_qty:
+            notional_min_qty = min_qty * entry_price_ref
+            print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")
+            print(f"Precio entrada ref: {entry_price_ref:.4f}, minQty: {min_qty}, qty_est: {qty_est}")
+            print(f"Notional mínimo por minQty: {notional_min_qty:.4f} USDT")
+            print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
+            return
+
+        notional_est = qty_est * entry_price_ref
+        if notional_est < NOTIONAL_MIN:
+            print("\n❌ Tras el cruce, la orden NO alcanza el notional mínimo de Binance Futuros.")
+            print(f"Notional estimado: {notional_est:.4f} USDT, mínimo requerido: {NOTIONAL_MIN:.4f} USDT")
+            print("No se abrirá la posición. Ajusta el poder de trading o usa otro símbolo.\n")
+            return
+
+        qty_str = format_quantity(qty_est)
+
+        print(f"Filtro LOT_SIZE Futuros {symbol} -> minQty={min_qty}, stepSize={step_size}, maxQty={max_qty}")
+        print(
+            f"[DEBUG] raw_qty_est: {raw_qty_est}, qty_est normalizada: {qty_est}, "
+            f"qty_str: {qty_str}, notional_est: {notional_est:.4f}"
+        )
+
+    except Exception as e:
+        print(f"⚠️ No se pudo obtener LOT_SIZE Futuros. Usando qty estimada sin normalizar: {e}")
+        qty_est = raw_qty_est
+        qty_str = format_quantity(qty_est)
+
+    print(f"\n[FUTUROS SHORT] Señal de entrada SHORT activada.")
+    print(f"Precio de referencia (ticker): {entry_price_ref:.4f} USDT")
+    print(f"Cantidad estimada a abrir:     {qty_str} {base_asset}")
+    print(f"Poder de trading usado:        {poder_usar:.4f} USDT")
+    print(f"Leverage efectivo (aprox):     {max_lev}x")
+    print("Ejecutando APERTURA SHORT automáticamente...\n")
+
+    entry_margin_usdt = poder_usar / max_lev if max_lev != 0 else poder_usar
+    entry_exec_price = entry_price_ref
+
+    if simular:
+        print("SIMULACIÓN: No se envía orden de apertura real.\n")
+    else:
+        try:
+            print("📥 ENVIANDO ORDEN MARKET SELL (SHORT FUTUROS)...")
+            entry_order = client.new_order(
+                symbol=symbol,
+                side="SELL",
+                type="MARKET",
+                quantity=qty_str
+            )
+            print("Orden de APERTURA SHORT enviada. Respuesta de Binance:")
+            print(entry_order)
+            entry_order_id = entry_order.get("orderId")
+
+            time.sleep(0.5)
+            pos = get_current_position(client, symbol)
+            if pos:
+                amt_pos = float(pos.get("positionAmt", "0"))
+                if amt_pos < 0:
+                    entry_exec_price = float(pos.get("entryPrice", entry_price_ref))
+                    lev_pos = float(pos.get("leverage", max_lev))
+                    notional_pos = abs(amt_pos) * entry_exec_price
+                    entry_margin_usdt = notional_pos / lev_pos if lev_pos != 0 else entry_margin_usdt
+                    qty_est = abs(amt_pos)
+                    qty_str = format_quantity(qty_est)
+                    print("\n[INFO] Datos reales de la posición SHORT tomados de get_position_risk():")
+                    print(f"Cantidad real:   {qty_est}")
+                    print(f"Precio entrada:  {entry_exec_price}")
+                    print(f"Leverage real:   {lev_pos}x")
+                    print(f"Margen aprox:    {entry_margin_usdt:.4f} USDT\n")
+            else:
+                print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
+
+        except Exception as e:
+            print(f"❌ Error enviando orden de apertura SHORT en Futuros: {e}")
+            return
+
+    print("\n=== Apertura SHORT realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
+
+    ejecutar_trailing_stop_futuros(
+        client=client,
+        symbol=symbol,
+        base_asset=base_asset,
+        interval=interval,
+        sleep_seconds=sleep_seconds,
+        wma_stop_len=wma_stop_len,
+        wait_on_close=wait_on_close,
+        qty_est=qty_est,
+        qty_str=qty_str,
+        entry_exec_price=entry_exec_price,
+        entry_margin_usdt=entry_margin_usdt,
+        simular=simular,
+        side="short",
+        entry_order_id=entry_order_id,
+        balance_inicial_futuros=balance_usdt,
+    )

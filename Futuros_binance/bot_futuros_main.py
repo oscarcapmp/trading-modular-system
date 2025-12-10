@@ -1,15 +1,17 @@
 # bot_futuros_main.py
-from infra_futuros import get_futures_client, get_futuros_usdt_balance
-from operacion import (
+from infra_futuros import (
+    get_futures_client,
+    get_futures_usdt_balance,
+    get_max_leverage_symbol,
     mostrar_posicion_actual,
-    venta_freno_emergencia,
-    compra_por_cruce_wma,
+    cerrar_posicion_market,
+    format_quantity,
 )
-# Si quieres luego: compra_limit_o_market, venta_stop_limit, mantener_posicion
+from operacion import run_long_strategy, run_short_strategy
 
 
 def main():
-    print("=== Bot Futuros USDT-M – Modular (Operación + Tácticas) ===")
+    print("=== Bot Futuros USDT-M – ENTRADA por cruce + CIERRE por WMA STOP (LONG / SHORT) ===")
 
     client = get_futures_client()
 
@@ -28,70 +30,142 @@ def main():
     wait_close_input = input("¿Esperar cierre REAL de la vela para el STOP? (true/false): ").strip().lower() or "true"
     wait_on_close = wait_close_input in ["true", "t", "1", "s", "si", "sí", "y", "yes"]
 
+    balance_usdt = get_futures_usdt_balance(client)
+    max_lev = get_max_leverage_symbol(client, symbol)
+    trading_power = balance_usdt * max_lev
+
+    print("\n=== INFORMACIÓN DE CUENTA (MODO QUANTFURY) ===")
+    print(f"Balance disponible USDT (Futuros): {balance_usdt:.4f}")
+    print(f"Apalancamiento MÁXIMO para {symbol}: {max_lev}x (fijo en esta versión)")
+    print(f"Poder de trading (balance * maxLev): {trading_power:.4f} USDT")
+    print("================================================\n")
+
     side_input = input("¿Estrategia LONG o SHORT? (long/short): ").strip().lower() or "long"
     if side_input not in ["long", "short"]:
         print("Opción de lado no válida. Usa 'long' o 'short'. Saliendo.")
         return
 
-    balance_usdt = get_futuros_usdt_balance(client)
-    print(f"\n=== INFORMACIÓN DE CUENTA ===")
-    print(f"Balance disponible USDT (Futuros): {balance_usdt:.4f}")
-    print("================================\n")
-
-    print("=== MENÚ DE OPERACIÓN ===")
+    print("=== MENÚ DE ACCIONES ===")
     print("1) Ver posición actual en este símbolo")
-    print("2) Cerrar posición completa (FRENO DE EMERGENCIA)")
-    print("3) Ejecutar COMPRA por cruce WMA + TRAILING STOP")
-    print("4) (Reservado) Ejecutar sólo TRAILING STOP sobre posición ya abierta\n")
+    print("2) Cerrar posición completa (MARKET)")
+    print("3) Ejecutar estrategia completa: cruce WMA ENTRADA + apertura + trailing STOP (MODO QUANTFURY)")
+    print("4) Asumir que ya hay posición abierta y SOLO ejecutar trailing STOP\n")
 
-    opcion = input("Elige una opción (1/2/3): ").strip() or "3"
+    opcion = input("Elige una opción (1/2/3/4): ").strip()
 
     if opcion == "1":
         mostrar_posicion_actual(client, symbol)
         return
 
-    if opcion == "2":
-        venta_freno_emergencia(client, symbol, simular)
+    elif opcion == "2":
+        cerrar_posicion_market(client, symbol, simular)
         return
 
+    print("\n=== RESUMEN CONFIGURACIÓN FUTUROS ===")
+    print(f"Símbolo:             {symbol}")
+    print(f"Lado estrategia:     {side_input.upper()}")
+    print(f"Modo:                {'SIMULACIÓN' if simular else 'REAL'}")
+    print(f"Intervalo:           {interval}")
+    print(f"WMA de ENTRADA:      {wma_entry_len}")
+    print(f"WMA de STOP:         {wma_stop_len}")
+    print(f"Sleep (segundos):    {sleep_seconds}")
+    print(f"Esperar cierre STOP: {wait_on_close}")
+    print(f"Apalancamiento usado: {max_lev}x")
+    print(f"Balance USDT:        {balance_usdt:.4f}")
+    print(f"Poder de trading:    {trading_power:.4f} USDT\n")
+
     if opcion == "3":
-        poder_usar = float(
-            input("Poder de trading (USDT) que deseas usar en esta operación: ").strip() or "0"
-        )
+        if side_input == "long":
+            run_long_strategy(
+                client=client,
+                symbol=symbol,
+                base_asset=base_asset,
+                simular=simular,
+                interval=interval,
+                sleep_seconds=sleep_seconds,
+                wma_entry_len=wma_entry_len,
+                wma_stop_len=wma_stop_len,
+                wait_on_close=wait_on_close,
+                balance_usdt=balance_usdt,
+                trading_power=trading_power,
+                max_lev=max_lev,
+            )
+        else:
+            run_short_strategy(
+                client=client,
+                symbol=symbol,
+                base_asset=base_asset,
+                simular=simular,
+                interval=interval,
+                sleep_seconds=sleep_seconds,
+                wma_entry_len=wma_entry_len,
+                wma_stop_len=wma_stop_len,
+                wait_on_close=wait_on_close,
+                balance_usdt=balance_usdt,
+                trading_power=trading_power,
+                max_lev=max_lev,
+            )
 
-        print("\n=== RESUMEN CONFIGURACIÓN OPERACIÓN ===")
-        print(f"Símbolo:             {symbol}")
-        print(f"Lado estrategia:     {side_input.upper()}")
-        print(f"Modo:                {'SIMULACIÓN' if simular else 'REAL'}")
-        print(f"Intervalo:           {interval}")
-        print(f"WMA de ENTRADA:      {wma_entry_len}")
-        print(f"WMA de STOP:         {wma_stop_len}")
-        print(f"Sleep (segundos):    {sleep_seconds}")
-        print(f"Esperar cierre STOP: {wait_on_close}")
-        print(f"Balance USDT:        {balance_usdt:.4f}")
-        print(f"Poder de trading:    {poder_usar:.4f} USDT\n")
+    elif opcion == "4":
+        from infra_futuros import get_current_position  # import local para evitar ciclos
 
-        continuar = input("¿Ejecutar OPERACIÓN de compra por cruce WMA? (s/n): ").strip().lower()
+        continuar = input("\n¿Iniciar SOLO el trailing STOP sobre una posición ya abierta? (s/n): ").strip().lower()
         if continuar not in ["s", "si", "sí", "y", "yes"]:
-            print("Operación cancelada por el usuario.")
+            print("Bot cancelado por el usuario.")
             return
 
-        compra_por_cruce_wma(
+        pos = get_current_position(client, symbol)
+        if not pos:
+            print(f"\n❌ No se encontró una posición abierta en {symbol}. No se puede iniciar trailing.")
+            return
+
+        amt = float(pos["positionAmt"])
+        if side_input == "long" and amt <= 0:
+            print(f"\n❌ La posición no es LONG (amt={amt}). Ajusta el lado o abre una LONG primero.")
+            return
+        if side_input == "short" and amt >= 0:
+            print(f"\n❌ La posición no es SHORT (amt={amt}). Ajusta el lado o abre una SHORT primero.")
+            return
+
+        entry_exec_price = float(pos["entryPrice"])
+        lev = float(pos["leverage"])
+        notional = abs(amt) * entry_exec_price
+        entry_margin_usdt = notional / lev if lev != 0 else notional
+
+        qty_est = abs(amt)
+        qty_str = format_quantity(qty_est)
+
+        lado_txt = "LONG" if side_input == "long" else "SHORT"
+        print("\n=== TRAILING SOLO SOBRE POSICIÓN EXISTENTE ===")
+        print(f"Símbolo:        {symbol}")
+        print(f"Cantidad {lado_txt}:  {qty_est}")
+        print(f"Precio entrada: {entry_exec_price}")
+        print(f"Leverage:       {lev}x")
+        print(f"Margen aprox:   {entry_margin_usdt:.4f} USDT")
+        print("Iniciando trailing WMA STOP solamente...\n")
+
+        from tacticas_salida import ejecutar_trailing_stop_futuros
+
+        ejecutar_trailing_stop_futuros(
             client=client,
             symbol=symbol,
             base_asset=base_asset,
-            side=side_input,
-            simular=simular,
             interval=interval,
             sleep_seconds=sleep_seconds,
-            wma_entry_len=wma_entry_len,
             wma_stop_len=wma_stop_len,
             wait_on_close=wait_on_close,
-            poder_usar=poder_usar,
+            qty_est=qty_est,
+            qty_str=qty_str,
+            entry_exec_price=entry_exec_price,
+            entry_margin_usdt=entry_margin_usdt,
+            simular=simular,
+            side=side_input,
+            entry_order_id=None,
+            balance_inicial_futuros=balance_usdt,
         )
-        return
 
-    print("Opción no válida. Saliendo.")
+    else:
+        print("Opción no válida. Saliendo.")
 
 
 if __name__ == "__main__":

@@ -16,23 +16,20 @@ except ModuleNotFoundError:
 # ALARMA SONORA – Glass + Voz femenina "Stop activado"
 # ==========================================================
 def sonar_alarma():
-    """Reproduce un sonido y una voz diciendo 'Stop activado' (en macOS)."""
     if platform.system() == "Darwin":
         os.system('afplay "/System/Library/Sounds/Glass.aiff"')
         time.sleep(3)
         os.system('say -v Victoria "Stop activado"')
     else:
-        # En otros sistemas, solo hace beep varias veces.
         for _ in range(5):
             print("\a")
             time.sleep(0.3)
 
 
 # ==========================================================
-# CLIENTE FUTUROS
+# CLIENTE FUTUROS Y UTILIDADES BÁSICAS
 # ==========================================================
 def get_futures_client():
-    """Crea el cliente de Binance Futuros USDT-M usando variables de entorno."""
     api_key = os.getenv("BINANCE_API_KEY")
     api_secret = os.getenv("BINANCE_API_SECRET")
     if not api_key or not api_secret:
@@ -40,11 +37,7 @@ def get_futures_client():
     return UMFutures(key=api_key, secret=api_secret)
 
 
-# ==========================================================
-# INDICADORES Y VELAS
-# ==========================================================
 def wma(values, length: int):
-    """Weighted Moving Average simple, con pesos 1..length."""
     if len(values) < length:
         return None
     weights = list(range(1, length + 1))
@@ -54,32 +47,26 @@ def wma(values, length: int):
     return num / den
 
 
-def get_closes_futuros(client, symbol: str, interval: str, limit: int):
-    """Devuelve una lista de precios de cierre para Futuros."""
+def get_closes_futures(client: UMFutures, symbol: str, interval: str, limit: int):
     klines = client.klines(symbol=symbol, interval=interval, limit=limit)
     closes = [float(k[4]) for k in klines]
     return closes
 
 
-# ==========================================================
-# UTILIDADES DE CANTIDADES / FORMATO / LOT_SIZE
-# ==========================================================
 def floor_to_step(qty: float, step: float) -> float:
-    """Redondea hacia abajo la cantidad al múltiplo más cercano del step."""
     if step <= 0:
         return qty
     return math.floor(qty / step) * step
 
 
 def format_quantity(qty: float) -> str:
-    """Formatea la cantidad quitando ceros y punto sobrante."""
     s = f"{qty:.10f}"
     s = s.rstrip("0").rstrip(".")
     return s
 
 
-def get_lot_size_filter_futuros(client, symbol: str):
-    """Devuelve (min_qty, max_qty, step_size) para Futuros USDT-M."""
+def get_lot_size_filter_futures(client: UMFutures, symbol: str):
+    """LOT_SIZE para Futuros USDT-M."""
     info = client.exchange_info()
     for sym in info["symbols"]:
         if sym["symbol"] == symbol:
@@ -92,10 +79,7 @@ def get_lot_size_filter_futuros(client, symbol: str):
     raise RuntimeError(f"No se encontró filtro LOT_SIZE para {symbol} en Futuros.")
 
 
-# ==========================================================
-# BALANCE Y APALANCAMIENTO
-# ==========================================================
-def get_futuros_usdt_balance(client) -> float:
+def get_futures_usdt_balance(client: UMFutures) -> float:
     """Balance disponible USDT en Futuros USDT-M."""
     try:
         balances = client.balance()
@@ -107,31 +91,76 @@ def get_futuros_usdt_balance(client) -> float:
     return 0.0
 
 
-def get_max_leverage_symbol(client, symbol: str) -> int:
+def get_max_leverage_symbol(client: UMFutures, symbol: str) -> int:
     """
-    En esta versión simple, devolvemos un apalancamiento máximo fijo (20x).
-    Más adelante puedes hacerlo dinámico según el símbolo.
+    En tu versión de la librería no está disponible leverage_bracket.
+    Usamos 20x como apalancamiento máximo por defecto.
     """
     return 20
 
 
-def precheck_poder_trading(client, symbol: str, poder_usdt: float) -> bool:
+# ==========================================================
+# COMISIONES: LECTURA DESDE TRADES (NO USADA AHORA, PERO DISPONIBLE)
+# ==========================================================
+def get_commission_for_order_usdt(
+    client: UMFutures,
+    symbol: str,
+    base_asset: str,
+    order_id: int,
+    ref_price: float
+) -> float:
     """
-    Precheck estilo 'Quantfury':
-    - Recibe un poder de trading en USDT
-    - Calcula la cantidad estimada
-    - Valida minQty y notional mínimo (100 USDT)
+    Lee los trades de Futuros para el símbolo y suma la comisión
+    asociada al orderId dado, convertida a USDT.
+    (Actualmente NO se usa, dejamos la función por si la quieres en otra versión.)
+    """
+    total = 0.0
+    try:
+        trades = client.user_trades(symbol=symbol, limit=1000)
+        for t in trades:
+            if t.get("orderId") != order_id:
+                continue
+
+            commission = float(t.get("commission", "0") or 0.0)
+            asset = t.get("commissionAsset", "")
+            price_fill = float(t.get("price", str(ref_price)) or ref_price)
+
+            if commission == 0:
+                continue
+
+            if asset == "USDT":
+                total += commission
+            elif asset == base_asset:
+                total += commission * price_fill
+            else:
+                total += commission * ref_price
+
+    except Exception as e:
+        print(f"⚠️ No se pudieron obtener comisiones para orderId {order_id}: {e}")
+
+    return total
+
+
+# ==========================================================
+# PRECHECK ESTILO "QUANTFURY": PODER DE TRADING (NOTIONAL)
+# ==========================================================
+def precheck_poder_trading(client: UMFutures, symbol: str, poder_usdt: float) -> bool:
+    """
+    Recibe el PODER DE TRADING en USDT que el usuario quiere usar.
+    Valida:
+    - LOT_SIZE (minQty, stepSize)
+    - NOTIONAL mínimo (100 USDT).
     """
     ticker = client.ticker_price(symbol=symbol)
     price = float(ticker["price"])
 
-    min_qty, max_qty, step_size = get_lot_size_filter_futuros(client, symbol)
+    min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
 
     raw_qty_est = poder_usdt / price
     qty_est = min(raw_qty_est, max_qty)
     qty_est = floor_to_step(qty_est, step_size)
 
-    # Validar minQty
+    # --- Validar minQty ---
     if qty_est < min_qty:
         notional_min_qty = min_qty * price
         print("\n❌ Con este poder de trading NO se alcanza el minQty del símbolo.")
@@ -143,7 +172,7 @@ def precheck_poder_trading(client, symbol: str, poder_usdt: float) -> bool:
         print("Aumenta el poder de trading o usa otro símbolo con notional más bajo.\n")
         return False
 
-    # Validar NOTIONAL mínimo 100 USDT
+    # --- Validar NOTIONAL mínimo 100 USDT ---
     NOTIONAL_MIN = 100.0
     notional_est = qty_est * price
 
@@ -170,3 +199,75 @@ def precheck_poder_trading(client, symbol: str, poder_usdt: float) -> bool:
     )
     return True
 
+
+# ==========================================================
+# POSICIÓN ACTUAL / CIERRE MANUAL
+# ==========================================================
+def get_current_position(client: UMFutures, symbol: str):
+    try:
+        resp = client.get_position_risk(symbol=symbol)
+        for p in resp:
+            amt = float(p.get("positionAmt", "0"))
+            if abs(amt) > 0:
+                return p
+        return None
+    except Exception as e:
+        print(f"Error obteniendo posición actual: {e}")
+        return None
+
+
+def mostrar_posicion_actual(client: UMFutures, symbol: str):
+    pos = get_current_position(client, symbol)
+    if not pos:
+        print(f"\nℹ️ No hay posición abierta en {symbol}.")
+        return
+
+    amt = float(pos["positionAmt"])
+    side = "LONG" if amt > 0 else "SHORT"
+    entry = float(pos["entryPrice"])
+    mark = float(pos["markPrice"])
+    lev = float(pos["leverage"])
+    upnl = float(pos["unRealizedProfit"])
+
+    print("\n=== POSICIÓN ACTUAL ===")
+    print(f"Símbolo:        {symbol}")
+    print(f"Lado:           {side}")
+    print(f"Cantidad:       {amt}")
+    print(f"Precio entrada: {entry}")
+    print(f"Precio mark:    {mark}")
+    print(f"Leverage:       {lev}x")
+    print(f"uPnL:           {upnl} USDT")
+    print("========================\n")
+
+
+def cerrar_posicion_market(client: UMFutures, symbol: str, simular: bool):
+    pos = get_current_position(client, symbol)
+    if not pos:
+        print(f"\nℹ️ No hay posición abierta en {symbol} para cerrar.")
+        return
+
+    amt = float(pos["positionAmt"])
+    if amt == 0:
+        print(f"\nℹ️ No hay cantidad abierta en {symbol}.")
+        return
+
+    side = "SELL" if amt > 0 else "BUY"
+    qty = abs(amt)
+    qty_str = format_quantity(qty)
+
+    print("\n=== CIERRE MANUAL DE POSICIÓN ===")
+    print(f"Símbolo:  {symbol}")
+    print(f"Lado:     {'LONG' if amt > 0 else 'SHORT'}")
+    print(f"Orden:    {side} {qty_str} (MARKET)")
+    print(f"Modo:     {'SIMULACIÓN' if simular else 'REAL'}\n")
+
+    if simular:
+        print("SIMULACIÓN: no se envió orden real de cierre.\n")
+        return
+
+    try:
+        resp = client.new_order(symbol=symbol, side=side, type="MARKET", quantity=qty_str)
+        print("✅ Orden de cierre enviada. Respuesta de Binance:")
+        print(resp)
+    except Exception as e:
+        print(f"❌ Error al cerrar la posición: {e}")
