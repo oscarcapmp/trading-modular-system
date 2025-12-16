@@ -111,9 +111,12 @@ def comprar_long_por_cruce_wma(
         print("❌ No puedes usar más poder de trading del que tienes disponible.")
         return
 
-    continuar = input(
-        f"\n¿Activar bot y esperar señal de ENTRADA LONG usando {poder_usar:.4f} USDT de poder? (s/n): "
-    ).strip().lower()
+    prompt_accion = (
+        f"\n¿Activar bot y ENTRAR LONG MARKET inmediato usando {poder_usar:.4f} USDT? (s/n): "
+        if wma_entry_len == 0
+        else f"\n¿Activar bot y esperar señal de ENTRADA LONG usando {poder_usar:.4f} USDT de poder? (s/n): "
+    )
+    continuar = input(prompt_accion).strip().lower()
     if continuar not in ["s", "si", "sí", "y", "yes"]:
         print("Bot cancelado por el usuario.")
         return
@@ -133,14 +136,19 @@ def comprar_long_por_cruce_wma(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = tactica_entrada_cruce_wma(
-        client=client,
-        symbol=symbol,
-        interval=interval,
-        wma_entry_len=wma_entry_len,
-        sleep_seconds=sleep_seconds,
-        side="long",
-    )
+    if wma_entry_len == 0:
+        ticker = client.ticker_price(symbol=symbol)
+        entry_price_ref = float(ticker["price"])
+        print("\n[ENTRADA] WMA de entrada = 0, ejecutando MARKET inmediato.")
+    else:
+        entry_price_ref = tactica_entrada_cruce_wma(
+            client=client,
+            symbol=symbol,
+            interval=interval,
+            wma_entry_len=wma_entry_len,
+            sleep_seconds=sleep_seconds,
+            side="long",
+        )
 
     if entry_price_ref is None:
         print("No se ejecutó entrada. Saliendo.")
@@ -284,9 +292,12 @@ def comprar_short_por_cruce_wma(
         print("❌ No puedes usar más poder de trading del que tienes disponible.")
         return
 
-    continuar = input(
-        f"\n¿Activar bot y esperar señal de ENTRADA SHORT usando {poder_usar:.4f} USDT de poder? (s/n): "
-    ).strip().lower()
+    prompt_accion = (
+        f"\n¿Activar bot y ENTRAR SHORT MARKET inmediato usando {poder_usar:.4f} USDT? (s/n): "
+        if wma_entry_len == 0
+        else f"\n¿Activar bot y esperar señal de ENTRADA SHORT usando {poder_usar:.4f} USDT de poder? (s/n): "
+    )
+    continuar = input(prompt_accion).strip().lower()
     if continuar not in ["s", "si", "sí", "y", "yes"]:
         print("Bot cancelado por el usuario.")
         return
@@ -306,14 +317,19 @@ def comprar_short_por_cruce_wma(
         except Exception as e:
             print(f"⚠️ No se pudo cambiar leverage (usará el actual). Error: {e}")
 
-    entry_price_ref = tactica_entrada_cruce_wma(
-        client=client,
-        symbol=symbol,
-        interval=interval,
-        wma_entry_len=wma_entry_len,
-        sleep_seconds=sleep_seconds,
-        side="short",
-    )
+    if wma_entry_len == 0:
+        ticker = client.ticker_price(symbol=symbol)
+        entry_price_ref = float(ticker["price"])
+        print("\n[ENTRADA] WMA de entrada = 0, ejecutando MARKET inmediato.")
+    else:
+        entry_price_ref = tactica_entrada_cruce_wma(
+            client=client,
+            symbol=symbol,
+            interval=interval,
+            wma_entry_len=wma_entry_len,
+            sleep_seconds=sleep_seconds,
+            side="short",
+        )
 
     if entry_price_ref is None:
         print("No se ejecutó entrada. Saliendo.")

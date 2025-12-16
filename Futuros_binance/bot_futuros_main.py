@@ -28,8 +28,13 @@ def main():
     interval = input("Marco de tiempo (ej: 1m, 5m, 15m, 1h): ").strip() or "1m"
     sleep_seconds = int(input("Segundos entre chequeos (ej: 15): ").strip() or "15")
 
-    wma_entry_len = int(input("Longitud de WMA de ENTRADA (ej: 89): ").strip() or "89")
+    wma_entry_len = int(
+        input("WMA de ENTRADA (ej: 89, o 0 para entrar a MARKET inmediato): ").strip() or "89"
+    )
     wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
+
+    if wma_entry_len == 0:
+        print("Entrada MARKET inmediata (sin táctica de cruce).")
 
     wait_close_input = input("¿Esperar cierre REAL de la vela para el STOP? (true/false): ").strip().lower() or "true"
     wait_on_close = wait_close_input in ["true", "t", "1", "s", "si", "sí", "y", "yes"]
