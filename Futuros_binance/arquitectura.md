@@ -30,6 +30,7 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Apalancamiento máximo fijo por función `get_max_leverage_symbol` (20x en esta versión).
 - Comisiones: se infiere por diferencia de balance (la lectura de trades está disponible pero no se usa).
 - Entradas y salidas actuales solo MARKET; no hay stop-limit ni órdenes limit.
+- Trailing incluye freno de emergencia: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
 
 ## 7. TODO
 - Implementar `tactica_entrada_wma34_debajo_y_cruce_89`.

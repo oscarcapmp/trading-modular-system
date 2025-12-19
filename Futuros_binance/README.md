@@ -1,5 +1,6 @@
 ## 1. Qué es
 Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con orden MARKET y sale con trailing basado en otra WMA. Permite modo simulación para no enviar órdenes reales.
+- Incluye freno de emergencia por ATR (1.5×ATR desde la WMA de stop) para cerrar si el precio se aleja demasiado.
 
 ## 2. Requisitos
 - Python 3.10+ recomendado.

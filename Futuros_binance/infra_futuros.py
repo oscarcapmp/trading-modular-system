@@ -46,6 +46,45 @@ def wma(values, length: int):
     return num / den
 
 
+def get_hlc_futures(client: UMFutures, symbol: str, interval: str, limit: int):
+    """Obtiene High, Low y Close de velas de Futuros."""
+    klines = client.klines(symbol=symbol, interval=interval, limit=limit)
+    highs = [float(k[2]) for k in klines]
+    lows = [float(k[3]) for k in klines]
+    closes = [float(k[4]) for k in klines]
+    return highs, lows, closes
+
+
+def atr(highs, lows, closes, length: int):
+    """
+    ATR simple (SMA) usando True Range clásico.
+    Devuelve None si no hay suficientes datos.
+    """
+    if length <= 0:
+        return None
+
+    if len(highs) < length + 1 or len(lows) < length + 1 or len(closes) < length + 1:
+        return None
+
+    trs = []
+    start = len(highs) - length
+    for i in range(start, len(highs)):
+        high = highs[i]
+        low = lows[i]
+        prev_close = closes[i - 1]
+        tr = max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close),
+        )
+        trs.append(tr)
+
+    if not trs:
+        return None
+
+    return sum(trs) / len(trs)
+
+
 def get_closes_futures(client: UMFutures, symbol: str, interval: str, limit: int):
     klines = client.klines(symbol=symbol, interval=interval, limit=limit)
     closes = [float(k[4]) for k in klines]
