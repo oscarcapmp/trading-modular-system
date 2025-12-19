@@ -175,6 +175,36 @@ def tactica_salida_trailing_stop_wma(
                         print("Orden de CIERRE enviada. Respuesta de Binance:")
                         print(exit_order)
                         exit_order_id = exit_order.get("orderId")
+
+                        # Intentar leer el precio real de llenado (avgPrice) y esperar confirmación.
+                        real_exit_price = exit_price_used
+                        avg_price = 0.0
+                        try:
+                            raw_avg = exit_order.get("avgPrice")
+                            avg_price = float(raw_avg) if raw_avg is not None else 0.0
+                        except Exception:
+                            avg_price = 0.0
+
+                        if (avg_price is None) or avg_price == 0.0:
+                            for _ in range(3):
+                                time.sleep(0.5)
+                                try:
+                                    ord_info = client.get_order(symbol=symbol, orderId=exit_order_id)
+                                    raw_avg = ord_info.get("avgPrice")
+                                    avg_price = float(raw_avg) if raw_avg is not None else 0.0
+                                    if avg_price and avg_price > 0:
+                                        break
+                                except Exception as e:
+                                    print(f"⚠️ No se pudo leer orden de cierre (reintento): {e}")
+
+                        if avg_price and avg_price > 0:
+                            real_exit_price = avg_price
+                            exit_price_used = real_exit_price
+                            exit_price = real_exit_price
+                            print(f"[CIERRE CONFIRMADO] avgPrice de cierre: {real_exit_price:.4f}")
+                        else:
+                            print("⚠️ No se pudo obtener avgPrice del cierre; se mantiene precio estimado.")
+
                     except Exception as e:
                         print(f"❌ Error al enviar la orden de cierre en Futuros: {e}")
                 else:
