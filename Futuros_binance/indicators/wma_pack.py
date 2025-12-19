@@ -1,5 +1,5 @@
 from infra_futuros import wma
-from config_wma_pack import WMA_PACK_ORDER, MAX_WMA_PACK_LEN
+from config_wma_pack import WMA_PACK_ORDER
 
 
 def calc_wma_pack(closes, custom_order=None):
@@ -14,18 +14,26 @@ def calc_wma_pack(closes, custom_order=None):
     return values
 
 
-def check_wma_alignment(wma_values_dict, custom_order=None):
+def check_wma_alignment(wma_values_dict, side: str = "long", custom_order=None):
     """
-    Revisa el orden: Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona.
-    Retorna (aligned: bool, broken: list[str], human_message: str)
+    Valida alineación dependiente del lado:
+    LONG  -> Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona
+    SHORT -> Pollita > Celeste > Dorada > Carmesí > Blanca > Lima > Camaleona
+    Retorna (aligned: bool, issues: list[str], human_message: str)
+    issues incluye tanto WMAs que rompen el orden como las que no tienen datos suficientes.
     """
     order = custom_order if custom_order is not None else WMA_PACK_ORDER
+    side_norm = (side or "long").lower()
+    is_long = side_norm != "short"
+
+    insufficient = []
     broken = []
 
-    # Si falta algún valor, se marca como roto.
     for name, _ in order:
         if wma_values_dict.get(name) is None:
-            broken.append(name)
+            insufficient.append(name)
+
+    comparator = (lambda a, b: a < b) if is_long else (lambda a, b: a > b)
 
     for i in range(len(order) - 1):
         left_name, _ = order[i]
@@ -36,23 +44,36 @@ def check_wma_alignment(wma_values_dict, custom_order=None):
         if left_val is None or right_val is None:
             continue
 
-        if not (left_val < right_val):
+        if not comparator(left_val, right_val):
             broken.extend([left_name, right_name])
 
-    # Dejar únicos en el mismo orden de aparición.
-    seen = set()
-    broken_unique = []
-    for n in broken:
-        if n not in seen:
-            seen.add(n)
-            broken_unique.append(n)
+    def _unique(seq):
+        seen = set()
+        res = []
+        for n in seq:
+            if n not in seen:
+                seen.add(n)
+                res.append(n)
+        return res
 
-    aligned = len(broken_unique) == 0
+    broken_unique = _unique(broken)
+    insufficient_unique = _unique(insufficient)
+    issues_unique = _unique(broken_unique + insufficient_unique)
 
-    if aligned:
-        names_str = " < ".join(name for name, _ in order)
-        msg = f"WMAs alineadas ✅: {names_str}"
-    else:
-        msg = "WMAs NO alineadas ❌: faltan por alinear: " + ", ".join(broken_unique)
+    aligned = len(issues_unique) == 0
 
-    return aligned, broken_unique, msg
+    direction = "<" if is_long else ">"
+    expected_chain = f" {direction} ".join(name for name, _ in order)
+    status_txt = "alineadas ✅" if aligned else "NO alineadas ❌"
+
+    details_parts = []
+    if broken_unique:
+        details_parts.append("rompen orden: " + ", ".join(broken_unique))
+    if insufficient_unique:
+        details_parts.append("datos insuficientes: " + ", ".join(insufficient_unique))
+
+    msg = f"WMAs {status_txt} ({side_norm.upper()}) -> esperado: {expected_chain}"
+    if details_parts:
+        msg += " | " + " | ".join(details_parts)
+
+    return aligned, issues_unique, msg

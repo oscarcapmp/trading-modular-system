@@ -67,10 +67,10 @@ def tactica_salida_trailing_stop_wma(
             close_current = closes[-1]
             close_prev = closes[-2]
 
-            if not alignment_reported and len(closes) >= MAX_WMA_PACK_LEN:
+            if not alignment_reported:
                 try:
                     wma_pack_values = calc_wma_pack(closes)
-                    _, _, msg_align = check_wma_alignment(wma_pack_values)
+                    _, _, msg_align = check_wma_alignment(wma_pack_values, side=side)
                     print(msg_align)
                     alignment_reported = True
                 except Exception as e:
