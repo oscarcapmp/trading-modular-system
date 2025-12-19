@@ -31,6 +31,10 @@ def tactica_salida_trailing_stop_wma(
 ):
     last_state = None
     last_closed_close = None
+    emergency_level = None
+    emergency_atr_ref = None
+    emergency_wma_ref = None
+    emergency_announced = False
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -60,15 +64,23 @@ def tactica_salida_trailing_stop_wma(
             close_current = closes[-1]
             close_prev = closes[-2]
 
-            atr_val = atr(highs, lows, closes, atr_len) if emergency_atr_on else None
-            emergency_level = None
-            if atr_val is not None:
-                if side == "long":
-                    emergency_level = wma_current - emergency_mult * atr_val
-                else:
-                    emergency_level = wma_current + emergency_mult * atr_val
+            if emergency_atr_on and emergency_level is None:
+                atr_val = atr(highs, lows, closes, atr_len)
+                if atr_val is not None and wma_current is not None:
+                    emergency_atr_ref = atr_val
+                    emergency_wma_ref = wma_current
+                    if side == "long":
+                        emergency_level = emergency_wma_ref - emergency_mult * emergency_atr_ref
+                    else:
+                        emergency_level = emergency_wma_ref + emergency_mult * emergency_atr_ref
+                    print(
+                        f"[EMERGENCIA ATR] Nivel fijado -> WMA_STOP ref: {emergency_wma_ref:.4f}, "
+                        f"ATR{atr_len} ref: {emergency_atr_ref:.4f}, "
+                        f"Nivel emergencia: {emergency_level:.4f}"
+                    )
+                    emergency_announced = True
 
-            atr_txt = f"{atr_val:.4f}" if atr_val is not None else "N/D"
+            atr_txt = f"{emergency_atr_ref:.4f}" if emergency_atr_ref is not None else "N/D"
             emergency_txt = f"{emergency_level:.4f}" if emergency_level is not None else "N/D"
 
             if side == "long":
@@ -90,8 +102,8 @@ def tactica_salida_trailing_stop_wma(
             print(
                 f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
                 f"Close parcial: {close_current:.4f} | "
-                f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | ATR{atr_len}: {atr_txt} | "
-                f"Nivel emergencia: {emergency_txt} | "
+                f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | ATR{atr_len} ref: {atr_txt} | "
+                f"Nivel emergencia (fijo): {emergency_txt} | "
                 f"Estado actual: {current_state} | Estado señal: {state_for_signal}"
             )
 
@@ -128,7 +140,7 @@ def tactica_salida_trailing_stop_wma(
                     exit_price = close_current
                     motivo = (
                         "Freno de emergencia: precio cruzó umbral ATR "
-                        f"(nivel {emergency_level:.4f}, ATR{atr_len}={atr_val:.4f})."
+                        f"(nivel {emergency_level:.4f}, ATR{atr_len}={atr_txt})."
                     )
 
             if trigger_exit:
@@ -141,10 +153,10 @@ def tactica_salida_trailing_stop_wma(
                 lado_txt = "LONG" if side == "long" else "SHORT"
                 print(f"\n=== [FUTUROS] SEÑAL DE SALIDA {lado_txt} DETECTADA (WMA STOP) ===")
                 print(f"Motivo:   {motivo}")
-                if emergency_triggered and emergency_level is not None and atr_val is not None:
+                if emergency_triggered and emergency_level is not None and emergency_atr_ref is not None:
                     print(
                         f"[EMERGENCIA ATR] Precio {close_current:.4f} rompió nivel "
-                        f"{emergency_level:.4f} (ATR{atr_len}={atr_val:.4f})"
+                        f"{emergency_level:.4f} (ATR{atr_len}={emergency_atr_ref:.4f})"
                     )
                 print(f"Salida a: {exit_price:.4f}")
                 print(f"Cantidad a cerrar: {qty_str} {base_asset}")
