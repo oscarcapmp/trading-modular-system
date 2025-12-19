@@ -46,13 +46,18 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
 - Tácticas de salida: trailing WMA.
 - Main: `bot_futuros_main.py` (entrypoint).
 
-## 7. Buenas prácticas personales
+## 7. WMA Pack (Pollita…Camaleona)
+- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Camaleona (987).
+- Alineadas si: Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona.
+- Ejemplo de log: `WMAs alineadas ✅: Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona` o `WMAs NO alineadas ❌: faltan por alinear: Dorada, Blanca`.
+
+## 8. Buenas prácticas personales
 - Probar siempre en simulación antes de usar real.
 - Usar símbolos líquidos y conocidos.
 - No guardar claves en el repo ni compartirlas.
 - Revisar lot sizes y notional mínimo antes de operar.
 - Mantener WMAs y sleep en valores razonables para el timeframe.
 
-## 8. Licencia / Aviso
+## 9. Licencia / Aviso
 Uso personal; no es asesoría financiera. Operar conlleva riesgo.  
 Mini diagrama: `main -> operacion -> (tactica_entrada + tactica_salida) -> Binance`

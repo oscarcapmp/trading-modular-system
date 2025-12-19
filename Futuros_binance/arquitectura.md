@@ -32,7 +32,12 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Entradas y salidas actuales solo MARKET; no hay stop-limit ni órdenes limit.
 - Trailing incluye freno de emergencia: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
 
-## 7. TODO
+## 7. WMA Pack (Pollita…Camaleona)
+- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Camaleona (987).
+- Se considera alineado cuando Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona.
+- Al inicio (y cuando hay datos suficientes) se imprime si están alineadas o qué nombres rompen el orden.
+
+## 8. TODO
 - Implementar `tactica_entrada_wma34_debajo_y_cruce_89`.
 - Implementar `tactica_salida_trailing_3_fases`.
 - Agregar modo de apertura LIMIT opcional.

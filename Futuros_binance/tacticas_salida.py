@@ -7,6 +7,8 @@ from infra_futuros import (
     sonar_alarma,
     wma,
 )
+from config_wma_pack import MAX_WMA_PACK_LEN
+from indicators.wma_pack import calc_wma_pack, check_wma_alignment
 
 
 def tactica_salida_trailing_stop_wma(
@@ -35,6 +37,7 @@ def tactica_salida_trailing_stop_wma(
     emergency_atr_ref = None
     emergency_wma_ref = None
     emergency_announced = False
+    alignment_reported = False
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -50,7 +53,7 @@ def tactica_salida_trailing_stop_wma(
 
     while True:
         try:
-            limit_needed = max(wma_stop_len + 3, atr_len + 2)
+            limit_needed = max(wma_stop_len + 3, atr_len + 2, MAX_WMA_PACK_LEN + 1)
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
 
             if len(closes) < wma_stop_len + 2:
@@ -63,6 +66,15 @@ def tactica_salida_trailing_stop_wma(
 
             close_current = closes[-1]
             close_prev = closes[-2]
+
+            if not alignment_reported and len(closes) >= MAX_WMA_PACK_LEN:
+                try:
+                    wma_pack_values = calc_wma_pack(closes)
+                    _, _, msg_align = check_wma_alignment(wma_pack_values)
+                    print(msg_align)
+                    alignment_reported = True
+                except Exception as e:
+                    print(f"⚠️ No se pudo evaluar alineación de WMA Pack: {e}")
 
             if emergency_atr_on and emergency_level is None:
                 atr_val = atr(highs, lows, closes, atr_len)

@@ -3,7 +3,10 @@ from infra_futuros import (
     get_futures_client,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
+    get_closes_futures,
 )
+from config_wma_pack import MAX_WMA_PACK_LEN
+from indicators.wma_pack import calc_wma_pack, check_wma_alignment
 from operacion import (
     cerrar_posicion_market,
     get_current_position,
@@ -12,6 +15,26 @@ from operacion import (
     run_short_strategy,
 )
 from tacticas_salida import tactica_salida_trailing_stop_wma
+
+
+def report_wma_pack_alignment(client, symbol: str, interval: str):
+    try:
+        closes = get_closes_futures(client, symbol, interval, limit=MAX_WMA_PACK_LEN + 2)
+    except Exception as e:
+        print(f"⚠️ No se pudieron leer cierres para WMA Pack: {e}")
+        return False
+
+    if len(closes) < MAX_WMA_PACK_LEN:
+        print(
+            f"WMAs NO alineadas ❌: faltan datos para evaluar pack "
+            f"({len(closes)}/{MAX_WMA_PACK_LEN} velas)."
+        )
+        return False
+
+    wma_values = calc_wma_pack(closes)
+    aligned, broken, msg = check_wma_alignment(wma_values)
+    print(msg)
+    return aligned
 
 
 def main():
@@ -56,6 +79,8 @@ def main():
     if side_input not in ["long", "short"]:
         print("Opción de lado no válida. Usa 'long' o 'short'. Saliendo.")
         return
+
+    report_wma_pack_alignment(client, symbol, interval)
 
     print("=== MENÚ DE ACCIONES ===")
     print("1) Ver posición actual en este símbolo")
