@@ -15,12 +15,12 @@ from binance_algo_orders import cancel_all_open_algo_orders, get_open_algo_order
 from config_wma_pack import MAX_WMA_PACK_LEN
 from indicators.wma_pack import calc_wma_pack, check_wma_alignment
 from Trailing_dinamico import (
+    init_trailing_state,
     calcular_wmas_trailing,
     calcular_wmas_trailing_prev,
     detectar_cruce_carmesi_blanca,
     porcentaje_cierre,
-    stop_roto,
-    wma_trailing_fase,
+    update_trailing,
 )
 
 
@@ -58,6 +58,7 @@ def tactica_salida_trailing_stop_wma(
     emergency_wma_ref = None
     emergency_announced = False
     alignment_reported = False
+    trailing_state = init_trailing_state(pct_fase1) if trailing_dinamico_on else None
     phase2_started = False
     phase1_executed = False
 
@@ -111,8 +112,8 @@ def tactica_salida_trailing_stop_wma(
                 time.sleep(sleep_seconds)
                 continue
 
-            wma_current = wma(closes, wma_stop_len)
-            wma_prev = wma(closes[:-1], wma_stop_len)
+            wma_current = wma(closes, wma_stop_len) if not trailing_dinamico_on else None
+            wma_prev = wma(closes[:-1], wma_stop_len) if not trailing_dinamico_on else None
 
             close_current = closes[-1]
             close_prev = closes[-2]
@@ -120,7 +121,7 @@ def tactica_salida_trailing_stop_wma(
             wmas_dyn = calcular_wmas_trailing(closes)
             wmas_dyn_prev = calcular_wmas_trailing_prev(closes)
 
-            if not alignment_reported:
+            if not alignment_reported and not trailing_dinamico_on:
                 try:
                     wma_pack_values = calc_wma_pack(closes)
                     _, _, msg_align = check_wma_alignment(wma_pack_values, side=side)
@@ -131,9 +132,9 @@ def tactica_salida_trailing_stop_wma(
 
             if emergency_atr_on and emergency_level is None:
                 atr_val = atr(highs, lows, closes, atr_len)
-                if atr_val is not None and wma_current is not None:
+                if atr_val is not None and (wma_current is not None or trailing_dinamico_on):
                     emergency_atr_ref = atr_val
-                    emergency_wma_ref = wma_current
+                    emergency_wma_ref = wma_current if wma_current is not None else wmas_dyn.get("dorada")
                     if side == "long":
                         emergency_level = emergency_wma_ref - emergency_mult * emergency_atr_ref
                     else:
@@ -222,71 +223,91 @@ def tactica_salida_trailing_stop_wma(
                 if close_current > max_price_during_trade:
                     max_price_during_trade = close_current
 
-            current_state = "above" if close_current > wma_current else "below"
-            prev_state = "above" if close_prev > wma_prev else "below"
-
-            state_for_signal = prev_state if wait_on_close else current_state
-
-            if last_state is None:
-                last_state = state_for_signal
-                last_closed_close = close_prev
-
-            phase2_cross = detectar_cruce_carmesi_blanca(
-                wmas_dyn_prev.get("carmesi"), wmas_dyn_prev.get("blanca"),
-                wmas_dyn.get("carmesi"), wmas_dyn.get("blanca")
-            )
-            if phase2_cross:
-                phase2_started = True
-
-            trailing_wma_dyn = None
-            if trailing_dinamico_on:
-                trailing_wma_dyn = wma_trailing_fase(
-                    price=close_current,
-                    wma_pollita=wmas_dyn.get("pollita"),
-                    wma_celeste=wmas_dyn.get("celeste"),
-                    wma_dorada=wmas_dyn.get("dorada"),
-                    fase2=phase2_started,
-                    side=side,
-                )
-
-            trailing_dyn_txt = f"{trailing_wma_dyn:.4f}" if trailing_wma_dyn is not None else "N/D"
-            print(
-                f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
-                f"Close parcial: {close_current:.4f} | "
-                f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | ATR{atr_len} ref: {atr_txt} | "
-                f"Nivel emergencia (fijo): {emergency_txt} | "
-                f"Estado actual: {current_state} | Estado señal: {state_for_signal} | "
-                f"Fase dyn: {'2' if phase2_started else '1' if trailing_dinamico_on else 'off'} | "
-                f"Trailing dyn: {trailing_dyn_txt}"
-            )
-
-            if close_prev != last_closed_close:
-                print(f"[STOP-CERRADA FUT] Nueva vela {interval} cerrada -> Close definitivo: {close_prev:.4f}")
-                last_closed_close = close_prev
-
-            if side == "long":
-                crossed = last_state == "above" and state_for_signal == "below"
-            else:
-                crossed = last_state == "below" and state_for_signal == "above"
-
-            trigger_exit = False
-            motivo = ""
-            emergency_triggered = False
-            exit_price = None
-
             if trailing_dinamico_on:
                 price_for_stop = close_prev if wait_on_close else close_current
-                if stop_roto(price_for_stop, trailing_wma_dyn, side):
+                trailing_state, decision = update_trailing(
+                    trailing_state,
+                    side=side,
+                    price=price_for_stop,
+                    wmas=wmas_dyn,
+                    wmas_prev=wmas_dyn_prev,
+                )
+                print(
+                    f"[TRAILING DIN] fase={decision['phase']} "
+                    f"trailing={decision['trailing_name']}@{decision['trailing_value']} "
+                    f"dist34={decision['dist_pollita']} dist55={decision['dist_celeste']} "
+                    f"cruce233_377={decision['cross_233_377']} action={decision['action']}"
+                )
+
+                if decision["action"] == "sell_partial" and not phase1_executed:
+                    pct_close = decision.get("pct", pct_fase1 / 100.0)
+                    qty_partial = abs(pos_amt) * pct_close
+                    if qty_partial > 0:
+                        qty_partial_str = format_quantity(qty_partial)
+                        if simular:
+                            print(f"[SIMULACIÓN] Cierre parcial Fase 1: {qty_partial_str}")
+                        else:
+                            exit_side_partial = "SELL" if side == "long" else "BUY"
+                            try:
+                                resp_partial = client.new_order(
+                                    symbol=symbol,
+                                    side=exit_side_partial,
+                                    type="MARKET",
+                                    quantity=qty_partial_str,
+                                    reduceOnly=True,
+                                )
+                                print("[TRAILING DINÁMICO] Orden parcial enviada:", resp_partial)
+                            except Exception as e:
+                                print(f"⚠️ No se pudo enviar orden parcial Fase 1: {e}")
+                        phase1_executed = True
+                        last_state = state_for_signal if not trailing_dinamico_on else last_state
+                        time.sleep(sleep_seconds)
+                        continue
+
+                if decision["action"] == "close_all":
                     trigger_exit = True
-                    motivo = "Trailing dinámico roto"
+                    motivo = "Trailing dinámico fase 2"
                     exit_price = price_for_stop
-            elif crossed:
-                trigger_exit = True
-                if side == "long":
-                    motivo = "Cruce bajista (precio cruza por debajo de la WMA de STOP)."
                 else:
-                    motivo = "Cruce alcista (precio cruza por encima de la WMA de STOP)."
-                exit_price = close_prev if wait_on_close else close_current
+                    trigger_exit = False
+            else:
+                current_state = "above" if close_current > wma_current else "below"
+                prev_state = "above" if close_prev > wma_prev else "below"
+                state_for_signal = prev_state if wait_on_close else current_state
+
+                if last_state is None:
+                    last_state = state_for_signal
+                    last_closed_close = close_prev
+
+                print(
+                    f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
+                    f"Close parcial: {close_current:.4f} | "
+                    f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | ATR{atr_len} ref: {atr_txt} | "
+                    f"Nivel emergencia (fijo): {emergency_txt} | "
+                    f"Estado actual: {current_state} | Estado señal: {state_for_signal}"
+                )
+
+                if close_prev != last_closed_close:
+                    print(f"[STOP-CERRADA FUT] Nueva vela {interval} cerrada -> Close definitivo: {close_prev:.4f}")
+                    last_closed_close = close_prev
+
+                if side == "long":
+                    crossed = last_state == "above" and state_for_signal == "below"
+                else:
+                    crossed = last_state == "below" and state_for_signal == "above"
+
+                trigger_exit = False
+                motivo = ""
+                emergency_triggered = False
+                exit_price = None
+
+                if crossed:
+                    trigger_exit = True
+                    if side == "long":
+                        motivo = "Cruce bajista (precio cruza por debajo de la WMA de STOP)."
+                    else:
+                        motivo = "Cruce alcista (precio cruza por encima de la WMA de STOP)."
+                    exit_price = close_prev if wait_on_close else close_current
 
             if emergency_atr_on and emergency_level is not None:
                 if side == "long":
