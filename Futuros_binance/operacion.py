@@ -93,9 +93,6 @@ def comprar_long_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool = False,
-    pct_fase1: float = 50.0,
-    atr_mult: float = 1.5,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
@@ -254,7 +251,6 @@ def comprar_long_por_cruce_wma(
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
         emergency_atr_on=emergency_atr_on,
-        atr_mult=atr_mult,
         qty_est=qty_est,
         qty_str=qty_str,
         entry_exec_price=entry_exec_price,
@@ -263,8 +259,6 @@ def comprar_long_por_cruce_wma(
         side="long",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
     )
 
 
@@ -282,9 +276,6 @@ def comprar_short_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool = False,
-    pct_fase1: float = 50.0,
-    atr_mult: float = 1.5,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
@@ -443,7 +434,6 @@ def comprar_short_por_cruce_wma(
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
         emergency_atr_on=emergency_atr_on,
-        atr_mult=atr_mult,
         qty_est=qty_est,
         qty_str=qty_str,
         entry_exec_price=entry_exec_price,
@@ -452,8 +442,6 @@ def comprar_short_por_cruce_wma(
         side="short",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
     )
 
 
