@@ -33,7 +33,6 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Trailing incluye freno de emergencia local: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
 - Desde 2025-12-09 Binance movió los stops condicionales USDT-M a Algo Orders: el freno nativo ahora se coloca vía `/fapi/v1/algoOrder` (CONDITIONAL STOP_MARKET).
 - Si el trailing cierra, cancela el STOP nativo (algo order) y valida que quede sin posición ni órdenes (incluyendo openAlgoOrders).
-- Trailing dinámico 2 fases: Fase 1 cierra parcial usando la WMA más lejana entre 34 y 55; Fase 2 se activa cuando Carmesí(233) cruza Blanca(377) y usa WMA89 para cerrar el resto.
 
 ## 7. WMA Pack (Pollita…Camaleona)
 - WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Lima (610), Camaleona (987).

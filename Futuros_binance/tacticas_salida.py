@@ -14,14 +14,6 @@ from infra_futuros import (
 from binance_algo_orders import cancel_all_open_algo_orders, get_open_algo_orders
 from config_wma_pack import MAX_WMA_PACK_LEN
 from indicators.wma_pack import calc_wma_pack, check_wma_alignment
-from Trailing_dinamico import (
-    calcular_wmas_trailing,
-    calcular_wmas_trailing_prev,
-    detectar_cruce_carmesi_blanca,
-    porcentaje_cierre,
-    stop_roto,
-    wma_trailing_fase,
-)
 
 
 def tactica_salida_trailing_stop_wma(
@@ -48,8 +40,6 @@ def tactica_salida_trailing_stop_wma(
     emergency_level_fixed: float | None = None,
     emergency_side_close: str | None = None,
     emergency_enabled: bool = True,
-    trailing_dinamico_on: bool = False,
-    pct_fase1: float = 50.0,
 ):
     last_state = None
     last_closed_close = None
@@ -58,8 +48,6 @@ def tactica_salida_trailing_stop_wma(
     emergency_wma_ref = None
     emergency_announced = False
     alignment_reported = False
-    phase2_started = False
-    phase1_executed = False
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -116,9 +104,6 @@ def tactica_salida_trailing_stop_wma(
 
             close_current = closes[-1]
             close_prev = closes[-2]
-
-            wmas_dyn = calcular_wmas_trailing(closes)
-            wmas_dyn_prev = calcular_wmas_trailing_prev(closes)
 
             if not alignment_reported:
                 try:
@@ -231,33 +216,12 @@ def tactica_salida_trailing_stop_wma(
                 last_state = state_for_signal
                 last_closed_close = close_prev
 
-            phase2_cross = detectar_cruce_carmesi_blanca(
-                wmas_dyn_prev.get("carmesi"), wmas_dyn_prev.get("blanca"),
-                wmas_dyn.get("carmesi"), wmas_dyn.get("blanca")
-            )
-            if phase2_cross:
-                phase2_started = True
-
-            trailing_wma_dyn = None
-            if trailing_dinamico_on:
-                trailing_wma_dyn = wma_trailing_fase(
-                    price=close_current,
-                    wma_pollita=wmas_dyn.get("pollita"),
-                    wma_celeste=wmas_dyn.get("celeste"),
-                    wma_dorada=wmas_dyn.get("dorada"),
-                    fase2=phase2_started,
-                    side=side,
-                )
-
-            trailing_dyn_txt = f"{trailing_wma_dyn:.4f}" if trailing_wma_dyn is not None else "N/D"
             print(
                 f"[STOP-PARCIAL FUT] {symbol} {interval} -> "
                 f"Close parcial: {close_current:.4f} | "
                 f"WMA_STOP{wma_stop_len}: {wma_current:.4f} | ATR{atr_len} ref: {atr_txt} | "
                 f"Nivel emergencia (fijo): {emergency_txt} | "
-                f"Estado actual: {current_state} | Estado señal: {state_for_signal} | "
-                f"Fase dyn: {'2' if phase2_started else '1' if trailing_dinamico_on else 'off'} | "
-                f"Trailing dyn: {trailing_dyn_txt}"
+                f"Estado actual: {current_state} | Estado señal: {state_for_signal}"
             )
 
             if close_prev != last_closed_close:
@@ -274,13 +238,7 @@ def tactica_salida_trailing_stop_wma(
             emergency_triggered = False
             exit_price = None
 
-            if trailing_dinamico_on:
-                price_for_stop = close_prev if wait_on_close else close_current
-                if stop_roto(price_for_stop, trailing_wma_dyn, side):
-                    trigger_exit = True
-                    motivo = "Trailing dinámico roto"
-                    exit_price = price_for_stop
-            elif crossed:
+            if crossed:
                 trigger_exit = True
                 if side == "long":
                     motivo = "Cruce bajista (precio cruza por debajo de la WMA de STOP)."
@@ -302,45 +260,6 @@ def tactica_salida_trailing_stop_wma(
                         f"(nivel {emergency_level:.4f}, ATR{atr_len}={atr_txt})."
                     )
 
-            if (
-                trailing_dinamico_on
-                and trigger_exit
-                and (not phase2_started)
-                and (not phase1_executed)
-            ):
-                pct_close = porcentaje_cierre(False, pct_fase1)
-                qty_partial = abs(pos_amt) * pct_close
-                if qty_partial <= 0:
-                    phase1_executed = True
-                    last_state = state_for_signal
-                    time.sleep(sleep_seconds)
-                    continue
-                qty_partial_str = format_quantity(qty_partial)
-                print(
-                    f"[TRAILING DINÁMICO] Fase 1: cerrando {pct_close*100:.2f}% "
-                    f"({qty_partial_str}) por ruptura de trailing dinámico."
-                )
-                if not simular:
-                    exit_side_partial = "SELL" if side == "long" else "BUY"
-                    try:
-                        resp_partial = client.new_order(
-                            symbol=symbol,
-                            side=exit_side_partial,
-                            type="MARKET",
-                            quantity=qty_partial_str,
-                            reduceOnly=True,
-                        )
-                        print("[TRAILING DINÁMICO] Orden parcial enviada:", resp_partial)
-                    except Exception as e:
-                        print(f"⚠️ No se pudo enviar orden parcial Fase 1: {e}")
-                else:
-                    print(f"[SIMULACIÓN] Cierre parcial Fase 1: {qty_partial_str}")
-
-                phase1_executed = True
-                last_state = state_for_signal
-                time.sleep(sleep_seconds)
-                continue
-
             if trigger_exit:
                 exit_price_used = exit_price if exit_price is not None else close_current
                 exit_price = exit_price_used
@@ -357,9 +276,7 @@ def tactica_salida_trailing_stop_wma(
                         f"{emergency_level:.4f} (ATR{atr_len}={emergency_atr_ref:.4f})"
                     )
                 print(f"Salida a: {exit_price:.4f}")
-                qty_close = abs(pos_amt) if pos_amt is not None and pos_amt != 0 else qty_est
-                qty_close_str = format_quantity(qty_close)
-                print(f"Cantidad a cerrar: {qty_close_str} {base_asset}")
+                print(f"Cantidad a cerrar: {qty_str} {base_asset}")
                 print(f"Modo: {'SIMULACIÓN' if simular else 'REAL'}\n")
 
                 if not simular:
@@ -375,7 +292,7 @@ def tactica_salida_trailing_stop_wma(
                             symbol=symbol,
                             side=exit_side,
                             type="MARKET",
-                            quantity=qty_close_str,
+                            quantity=qty_str,
                             reduceOnly=True,
                         )
                         print("Orden de CIERRE enviada. Respuesta de Binance:")
