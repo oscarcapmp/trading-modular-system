@@ -30,7 +30,8 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Apalancamiento máximo fijo por función `get_max_leverage_symbol` (20x en esta versión).
 - Comisiones: se infiere por diferencia de balance (la lectura de trades está disponible pero no se usa).
 - Entradas y salidas actuales solo MARKET; no hay stop-limit ni órdenes limit.
-- Trailing incluye freno de emergencia: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
+- ATR LOCAL (airbag) configurable por k y ejecutado por el bot con MARKET reduce-only; no hay stop nativo en Binance.
+- Trailing dinámico 2 fases: Fase 1 usa la WMA más lejana entre 34 y 55 con cierre parcial único; Fase 2 se activa por cruce 233/377 y usa WMA89 para cerrar el resto.
 
 ## 7. WMA Pack (Pollita…Camaleona)
 - WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Camaleona (987).

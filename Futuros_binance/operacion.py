@@ -93,6 +93,9 @@ def comprar_long_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    trailing_dinamico_on: bool = False,
+    pct_fase1: float = 50.0,
+    atr_mult: float = 1.5,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
@@ -276,6 +279,9 @@ def comprar_short_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    trailing_dinamico_on: bool = False,
+    pct_fase1: float = 50.0,
+    atr_mult: float = 1.5,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")

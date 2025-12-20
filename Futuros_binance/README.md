@@ -28,8 +28,10 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
   - intervalo (ej. 1m, 5m, 15m)
   - segundos de espera entre chequeos
   - WMA de entrada
-  - WMA de stop (trailing)
+  - trailing dinámico 2 fases (s/n) y % parcial fase 1 (ignora Longitud WMA STOP si está activo)
+  - WMA de stop (trailing) cuando el dinámico está apagado
   - esperar cierre real para stop (true/false)
+  - freno ATR LOCAL: activar (s/n) y multiplicador k (default 1.5), cierre MARKET reduce-only sin stop nativo en Binance
   - lado (long/short)
   - poder a usar (USDT) cuando se pide
   - opción de menú: ver posición, cerrar, estrategia completa o solo trailing
