@@ -19,6 +19,7 @@ from Trailing_dinamico import (
     calcular_wmas_trailing,
     calcular_wmas_trailing_prev,
     detectar_cruce_carmesi_blanca,
+    porcentaje_cierre,
     update_trailing,
 )
 
@@ -328,7 +329,7 @@ def tactica_salida_trailing_stop_wma(
                 and (not phase2_started)
                 and (not phase1_executed)
             ):
-                pct_close = decision.get("pct", pct_fase1 / 100.0)
+                pct_close = porcentaje_cierre(False, pct_fase1)
                 qty_partial = abs(pos_amt) * pct_close
                 if qty_partial <= 0:
                     phase1_executed = True
