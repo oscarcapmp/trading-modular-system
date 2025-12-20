@@ -43,3 +43,6 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Agregar modo de apertura LIMIT opcional.
 - Añadir stop-limit de emergencia.
 - Parametrizar apalancamiento máximo por símbolo cuando esté disponible.
+
+## Decisiones descartadas
+- Stop nativo en Binance (Algo Orders): revertido por complejidad y cambios de API; se mantiene STOP MARKET ejecutado por el bot para mayor simplicidad operativa.
