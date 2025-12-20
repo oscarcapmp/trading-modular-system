@@ -22,19 +22,10 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
   ```bash
   python bot_futuros_main.py
   ```
-- Inputs solicitados (en orden):
-  - símbolo (ej. BTCUSDT)
-  - simular (s/n)
-  - intervalo (ej. 1m, 5m, 15m)
-  - segundos de espera entre chequeos
-  - WMA de entrada
-  - trailing dinámico 2 fases (s/n) y % parcial fase 1 (ignora Longitud WMA STOP si está activo)
-  - WMA de stop (trailing) cuando el dinámico está apagado
-  - esperar cierre real para stop (true/false)
-  - freno ATR LOCAL: activar (s/n) y multiplicador k (default 1.5), cierre MARKET reduce-only sin stop nativo en Binance
-  - lado (long/short)
-  - poder a usar (USDT) cuando se pide
-  - opción de menú: ver posición, cerrar, estrategia completa o solo trailing
+- Primer prompt: menú principal con 3 modos:
+  - Nueva operación: pide modo simulación/real, timeframe, WMA de entrada o market, tipo de salida (stop WMA o trailing dinámico) y freno ATR local.
+  - Posición ya abierta: valida que exista posición, muestra resumen real y permite solo gestionar con stop WMA o trailing dinámico + ATR.
+  - Gestión manual: ver posición o cerrarla completa (MARKET) sin trailing ni ATR.
 
 ## 5. Modo simulación vs real
 - Simulación: no envía órdenes a Binance; muestra lo que haría.

@@ -17,7 +17,7 @@ Bot para Futuros USDT-M que entra por cruce de WMA (long/short), abre posición 
 - trabajar_futures_wma_exit_bot.py: referencia a la nueva modularización.
 
 ## 4. Flujo de ejecución
-bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entrada + trailing) → ejecuta órdenes (o simula) → imprime resumen.
+bot_futuros_main.py → menú por modo operativo (nueva operación / posición abierta / gestión manual) → llama Operación → usa Tácticas (entrada + trailing) → ejecuta órdenes (o simula) → imprime resumen.
 
 ## 5. Puntos de extensión
 - Nueva táctica de entrada: crear función en tacticas_entrada.py y llamarla desde operacion.py.

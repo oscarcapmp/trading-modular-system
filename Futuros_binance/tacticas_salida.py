@@ -45,6 +45,7 @@ def tactica_salida_trailing_stop_wma(
     alignment_reported = False
     trailing_state = init_trailing_state(pct_fase1) if trailing_dinamico_on else None
     qty_remaining = qty_est
+    debug_logged = False
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -69,17 +70,12 @@ def tactica_salida_trailing_stop_wma(
             )
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
 
-            if not trailing_dinamico_on and len(closes) < wma_stop_len + 2:
-                print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
-                time.sleep(sleep_seconds)
-                continue
-            if not trailing_dinamico_on and wma_stop_len <= 0:
-                print("WMA_STOP inválida (<=0). Ajusta la longitud o usa trailing dinámico.")
-                time.sleep(sleep_seconds)
-                continue
+            if not debug_logged:
+                print(f"[DEBUG] trailing_dinamico_on={trailing_dinamico_on} wma_stop_len={wma_stop_len}")
+                debug_logged = True
 
-            wma_current = wma(closes, wma_stop_len) if not trailing_dinamico_on else None
-            wma_prev = wma(closes[:-1], wma_stop_len) if not trailing_dinamico_on else None
+            wma_current = wma(closes, wma_stop_len) if (not trailing_dinamico_on and wma_stop_len > 0) else None
+            wma_prev = wma(closes[:-1], wma_stop_len) if (not trailing_dinamico_on and wma_stop_len > 0) else None
 
             close_current = closes[-1]
             close_prev = closes[-2]
@@ -185,6 +181,10 @@ def tactica_salida_trailing_stop_wma(
                     exit_price = price_for_stop
 
             else:
+                if wma_stop_len <= 0:
+                    print("WMA_STOP inválida (<=0). Ajusta la longitud o usa trailing dinámico.")
+                    time.sleep(sleep_seconds)
+                    continue
                 current_state = "above" if close_current > wma_current else "below"
                 prev_state = "above" if close_prev > wma_prev else "below"
                 state_for_signal = prev_state if wait_on_close else current_state
