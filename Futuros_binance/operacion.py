@@ -97,6 +97,8 @@ def comprar_long_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    trailing_dinamico_on: bool = False,
+    pct_fase1: float = 50,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
@@ -293,6 +295,8 @@ def comprar_long_por_cruce_wma(
         emergency_level_fixed=emergency_price if emergency_atr_on else None,
         emergency_side_close=exit_side,
         emergency_enabled=emergency_atr_on,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
     )
 
 
@@ -310,6 +314,8 @@ def comprar_short_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    trailing_dinamico_on: bool = False,
+    pct_fase1: float = 50,
 ):
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
@@ -506,6 +512,8 @@ def comprar_short_por_cruce_wma(
         emergency_level_fixed=emergency_price if emergency_atr_on else None,
         emergency_side_close=exit_side,
         emergency_enabled=emergency_atr_on,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
     )
 
 

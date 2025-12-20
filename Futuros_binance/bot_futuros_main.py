@@ -52,6 +52,18 @@ def main():
     emergency_input = input("¿Activar freno de emergencia ATR NATIVO en Binance? (s/n) [default: s]: ").strip().lower() or "s"
     emergency_atr_on = emergency_input in ["s", "si", "sí", "y", "yes"]
 
+    trailing_dyn_input = input("¿Activar trailing dinámico 2 fases? (s/n) [default: n]: ").strip().lower() or "n"
+    trailing_dinamico_on = trailing_dyn_input in ["s", "si", "sí", "y", "yes"]
+    pct_fase1_input = input("Porcentaje de cierre en Fase 1 (1-99) [default: 50]: ").strip() or "50"
+    try:
+        pct_fase1 = float(pct_fase1_input)
+        if pct_fase1 < 1:
+            pct_fase1 = 1
+        if pct_fase1 > 99:
+            pct_fase1 = 99
+    except ValueError:
+        pct_fase1 = 50
+
     if wma_entry_len == 0:
         print("Entrada MARKET inmediata (sin táctica de cruce).")
 
@@ -99,6 +111,7 @@ def main():
     print(f"WMA de ENTRADA:      {wma_entry_len}")
     print(f"WMA de STOP:         {wma_stop_len}")
     print(f"Freno nativo:        {'Sí' if emergency_atr_on else 'No'}")
+    print(f"Trailing dinámico:   {'Sí' if trailing_dinamico_on else 'No'} (Fase1: {pct_fase1}%)")
     print(f"Sleep (segundos):    {sleep_seconds}")
     print(f"Esperar cierre STOP: {wait_on_close}")
     print(f"Apalancamiento usado: {max_lev}x")
@@ -121,6 +134,8 @@ def main():
                 balance_usdt=balance_usdt,
                 trading_power=trading_power,
                 max_lev=max_lev,
+                trailing_dinamico_on=trailing_dinamico_on,
+                pct_fase1=pct_fase1,
             )
         else:
             run_short_strategy(
@@ -137,6 +152,8 @@ def main():
                 balance_usdt=balance_usdt,
                 trading_power=trading_power,
                 max_lev=max_lev,
+                trailing_dinamico_on=trailing_dinamico_on,
+                pct_fase1=pct_fase1,
             )
 
     elif opcion == "4":
@@ -192,6 +209,8 @@ def main():
             side=side_input,
             entry_order_id=None,
             balance_inicial_futuros=balance_usdt,
+            trailing_dinamico_on=trailing_dinamico_on,
+            pct_fase1=pct_fase1,
         )
 
     else:

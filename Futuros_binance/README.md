@@ -6,6 +6,7 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
 - Desde 2025-12-09 Binance mueve stops condicionales USDT-M a Algo Orders; el freno nativo ahora es un STOP_MARKET CONDITIONAL (Algo Order) server-side.
 - Freno de emergencia nativo: se coloca como Algo Order al abrir; sobrevive si el servidor cae.
 - Si el trailing cierra, el bot cancela el STOP nativo, valida que la posición quede en 0 y que no existan órdenes (openOrders/openAlgoOrders vacíos).
+- Trailing dinámico 2 fases (opcional): Fase 1 cierra un porcentaje sobre WMA más lejana (34/55), Fase 2 cambia a WMA89 tras cruce 233/377 para cerrar el resto.
 
 ## 2. Requisitos
 - Python 3.10+ recomendado.
@@ -34,6 +35,7 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
   - segundos de espera entre chequeos
   - WMA de entrada
   - WMA de stop (trailing)
+  - trailing dinámico 2 fases (s/n) y % de cierre Fase 1
   - esperar cierre real para stop (true/false)
   - lado (long/short)
   - poder a usar (USDT) cuando se pide
