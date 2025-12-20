@@ -55,6 +55,36 @@ def get_hlc_futures(client: UMFutures, symbol: str, interval: str, limit: int):
     return highs, lows, closes
 
 
+def atr_sma(highs, lows, closes, length: int = 14):
+    """
+    ATR simple (SMA) usando True Range clásico.
+    Devuelve None si no hay suficientes datos.
+    """
+    if length <= 0:
+        return None
+
+    if len(highs) < length + 1 or len(lows) < length + 1 or len(closes) < length + 1:
+        return None
+
+    trs = []
+    start = len(highs) - length
+    for i in range(start, len(highs)):
+        high = highs[i]
+        low = lows[i]
+        prev_close = closes[i - 1]
+        tr = max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close),
+        )
+        trs.append(tr)
+
+    if not trs:
+        return None
+
+    return sum(trs) / len(trs)
+
+
 def atr(highs, lows, closes, length: int):
     """
     ATR simple (SMA) usando True Range clásico.
@@ -135,6 +165,96 @@ def get_max_leverage_symbol(client: UMFutures, symbol: str) -> int:
     Usamos 20x como apalancamiento máximo por defecto.
     """
     return 20
+
+
+def place_emergency_stop_order(client, symbol: str, side: str, qty_str: str, stop_price: float, is_simulation: bool):
+    """
+    Coloca una orden STOP_MARKET reduceOnly en Binance como freno nativo.
+    Devuelve dict con orderId (None en simulación).
+    """
+    stop_price_fmt = f"{stop_price:.8f}"
+    if is_simulation:
+        print(f"[FRENO NATIVO] Simulación: stopPrice calculado {stop_price_fmt}. No se envía orden.")
+        return {"orderId": None}
+
+    exit_side = "SELL" if side == "long" else "BUY"
+    try:
+        print(
+            f"[FRENO NATIVO] Enviando STOP_MARKET reduceOnly -> "
+            f"{exit_side} {qty_str} @ stopPrice {stop_price_fmt}"
+        )
+        order = client.new_order(
+            symbol=symbol,
+            side=exit_side,
+            type="STOP_MARKET",
+            stopPrice=stop_price_fmt,
+            quantity=qty_str,
+            reduceOnly=True,
+        )
+        print(f"[FRENO NATIVO] Colocado en Binance. orderId: {order.get('orderId')}, stopPrice: {stop_price_fmt}")
+        return order
+    except Exception as e:
+        print(f"⚠️ No se pudo colocar freno nativo STOP_MARKET: {e}")
+        return {"orderId": None}
+
+
+def cancel_order_safe(client, symbol: str, order_id):
+    if order_id is None:
+        return
+    try:
+        client.cancel_order(symbol=symbol, orderId=order_id)
+        print(f"[FRENO NATIVO] Orden {order_id} cancelada.")
+    except Exception as e:
+        print(f"⚠️ No se pudo cancelar orden {order_id}: {e}")
+
+
+def cancel_all_open_orders_symbol(client, symbol: str):
+    try:
+        open_orders = client.get_open_orders(symbol=symbol)
+    except Exception as e:
+        print(f"⚠️ No se pudieron leer órdenes abiertas para {symbol}: {e}")
+        return
+
+    if not open_orders:
+        return
+
+    for o in open_orders:
+        oid = o.get("orderId")
+        try:
+            client.cancel_order(symbol=symbol, orderId=oid)
+            print(f"[CANCEL ALL] Orden {oid} cancelada.")
+        except Exception as e:
+            print(f"⚠️ No se pudo cancelar orden {oid}: {e}")
+
+
+def wait_until_flat_and_no_orders(client, symbol: str, timeout_sec: float = 10, poll: float = 0.25) -> bool:
+    """
+    Espera a que no haya posición abierta ni órdenes pendientes para el símbolo.
+    """
+    end_time = time.time() + timeout_sec
+    while time.time() < end_time:
+        try:
+            pos_list = client.get_position_risk(symbol=symbol)
+            position_amt = 0.0
+            for p in pos_list:
+                position_amt = float(p.get("positionAmt", "0") or 0.0)
+                break
+            has_pos = abs(position_amt) > 0
+
+            open_orders = client.get_open_orders(symbol=symbol)
+            has_orders = len(open_orders) > 0
+
+            if not has_pos and not has_orders:
+                print("[CHECK] Sin posición y sin órdenes abiertas.")
+                return True
+        except Exception as e:
+            print(f"⚠️ Error revisando estado plano: {e}")
+            break
+
+        time.sleep(poll)
+
+    print("⚠️ Timeout esperando quedar plano y sin órdenes abiertas.")
+    return False
 
 
 # ==========================================================

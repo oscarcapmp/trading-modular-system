@@ -2,6 +2,10 @@
 Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con orden MARKET y sale con trailing basado en otra WMA. Permite modo simulación para no enviar órdenes reales.
 - Incluye freno de emergencia por ATR (1.5×ATR desde la WMA de stop) para cerrar si el precio se aleja demasiado.
 
+### Notas rápidas
+- Freno de emergencia nativo: se coloca STOP_MARKET en Binance al abrir operación.
+- Si el trailing cierra, el bot cancela el STOP nativo y verifica posición=0 y sin órdenes abiertas.
+
 ## 2. Requisitos
 - Python 3.10+ recomendado.
 - Dependencia: `binance-futures-connector`.
@@ -47,9 +51,9 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
 - Main: `bot_futuros_main.py` (entrypoint).
 
 ## 7. WMA Pack (Pollita…Camaleona)
-- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Camaleona (987).
-- Alineadas si: Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona.
-- Ejemplo de log: `WMAs alineadas ✅: Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona` o `WMAs NO alineadas ❌: faltan por alinear: Dorada, Blanca`.
+- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Lima (610), Camaleona (987).
+- Alineadas en LONG si: Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona (en SHORT se invierte el orden).
+- Ejemplo de log: `WMAs alineadas ✅: Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona` o `WMAs NO alineadas ❌: rompen orden: Dorada, Blanca | datos insuficientes: Lima`.
 
 ## 8. Buenas prácticas personales
 - Probar siempre en simulación antes de usar real.

@@ -49,7 +49,7 @@ def main():
     )
     wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
 
-    emergency_input = input("¿Activar freno de emergencia ATR? (s/n) [default: s]: ").strip().lower() or "s"
+    emergency_input = input("¿Activar freno de emergencia ATR NATIVO en Binance? (s/n) [default: s]: ").strip().lower() or "s"
     emergency_atr_on = emergency_input in ["s", "si", "sí", "y", "yes"]
 
     if wma_entry_len == 0:
@@ -98,7 +98,7 @@ def main():
     print(f"Intervalo:           {interval}")
     print(f"WMA de ENTRADA:      {wma_entry_len}")
     print(f"WMA de STOP:         {wma_stop_len}")
-    print(f"Freno emergencia ATR:{'Sí' if emergency_atr_on else 'No'}")
+    print(f"Freno nativo:        {'Sí' if emergency_atr_on else 'No'}")
     print(f"Sleep (segundos):    {sleep_seconds}")
     print(f"Esperar cierre STOP: {wait_on_close}")
     print(f"Apalancamiento usado: {max_lev}x")

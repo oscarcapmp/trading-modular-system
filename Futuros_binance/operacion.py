@@ -1,9 +1,13 @@
 import time
 from infra_futuros import (
+    atr_sma,
     floor_to_step,
     format_quantity,
+    get_hlc_futures,
     get_lot_size_filter_futures,
+    place_emergency_stop_order,
     precheck_poder_trading,
+    wma,
 )
 from tacticas_entrada import tactica_entrada_cruce_wma
 from tacticas_salida import tactica_salida_trailing_stop_wma
@@ -242,6 +246,29 @@ def comprar_long_por_cruce_wma(
 
     print("\n=== Apertura LONG realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
+    emergency_order_id = None
+    try:
+        atr_len = 14
+        limit_needed = max(wma_stop_len + 3, atr_len + 2)
+        highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
+        wma_stop_ref = wma(closes, wma_stop_len)
+        atr_ref = atr_sma(highs, lows, closes, atr_len)
+        if wma_stop_ref is not None and atr_ref is not None and emergency_atr_on:
+            emergency_price = wma_stop_ref - 1.5 * atr_ref
+            order = place_emergency_stop_order(
+                client=client,
+                symbol=symbol,
+                side="long",
+                qty_str=qty_str,
+                stop_price=emergency_price,
+                is_simulation=simular,
+            )
+            emergency_order_id = order.get("orderId")
+        elif emergency_atr_on:
+            print("⚠️ No se pudo calcular freno nativo (datos insuficientes para WMA/ATR).")
+    except Exception as e:
+        print(f"⚠️ Error preparando freno nativo: {e}")
+
     tactica_salida_trailing_stop_wma(
         client=client,
         symbol=symbol,
@@ -259,6 +286,8 @@ def comprar_long_por_cruce_wma(
         side="long",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        emergency_order_id=emergency_order_id,
+        emergency_stop_active=emergency_atr_on,
     )
 
 
@@ -425,6 +454,29 @@ def comprar_short_por_cruce_wma(
 
     print("\n=== Apertura SHORT realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
+    emergency_order_id = None
+    try:
+        atr_len = 14
+        limit_needed = max(wma_stop_len + 3, atr_len + 2)
+        highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
+        wma_stop_ref = wma(closes, wma_stop_len)
+        atr_ref = atr_sma(highs, lows, closes, atr_len)
+        if wma_stop_ref is not None and atr_ref is not None and emergency_atr_on:
+            emergency_price = wma_stop_ref + 1.5 * atr_ref
+            order = place_emergency_stop_order(
+                client=client,
+                symbol=symbol,
+                side="short",
+                qty_str=qty_str,
+                stop_price=emergency_price,
+                is_simulation=simular,
+            )
+            emergency_order_id = order.get("orderId")
+        elif emergency_atr_on:
+            print("⚠️ No se pudo calcular freno nativo (datos insuficientes para WMA/ATR).")
+    except Exception as e:
+        print(f"⚠️ Error preparando freno nativo: {e}")
+
     tactica_salida_trailing_stop_wma(
         client=client,
         symbol=symbol,
@@ -442,6 +494,8 @@ def comprar_short_por_cruce_wma(
         side="short",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        emergency_order_id=emergency_order_id,
+        emergency_stop_active=emergency_atr_on,
     )
 
 
