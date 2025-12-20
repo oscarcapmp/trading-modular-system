@@ -1,13 +1,10 @@
 import time
 from infra_futuros import (
     atr,
-    cancel_all_open_orders_symbol,
-    cancel_order_safe,
     get_hlc_futures,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
     sonar_alarma,
-    wait_until_flat_and_no_orders,
     wma,
 )
 from config_wma_pack import MAX_WMA_PACK_LEN
@@ -33,8 +30,6 @@ def tactica_salida_trailing_stop_wma(
     emergency_atr_on: bool = True,
     atr_len: int = 14,
     emergency_mult: float = 1.5,
-    emergency_order_id: int | None = None,
-    emergency_stop_active: bool = True,
 ):
     last_state = None
     last_closed_close = None
@@ -60,22 +55,6 @@ def tactica_salida_trailing_stop_wma(
         try:
             limit_needed = max(wma_stop_len + 3, atr_len + 2, MAX_WMA_PACK_LEN + 1)
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
-
-            if not simular:
-                try:
-                    pos_list = client.get_position_risk(symbol=symbol)
-                    pos_amt = 0.0
-                    for p in pos_list:
-                        pos_amt = float(p.get("positionAmt", "0") or 0.0)
-                        break
-                    if abs(pos_amt) == 0:
-                        print("Posición ya cerrada en Binance. Terminando trailing.")
-                        cancel_all_open_orders_symbol(client, symbol)
-                        if emergency_stop_active:
-                            cancel_order_safe(client, symbol, emergency_order_id)
-                        return
-                except Exception as e:
-                    print(f"⚠️ No se pudo leer posición actual: {e}")
 
             if len(closes) < wma_stop_len + 2:
                 print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
@@ -181,9 +160,6 @@ def tactica_salida_trailing_stop_wma(
                 exit_price = exit_price_used
                 trade_end_time = time.time()
 
-                if emergency_stop_active:
-                    cancel_order_safe(client, symbol, emergency_order_id)
-
                 sonar_alarma()
 
                 lado_txt = "LONG" if side == "long" else "SHORT"
@@ -206,8 +182,7 @@ def tactica_salida_trailing_stop_wma(
                             symbol=symbol,
                             side=exit_side,
                             type="MARKET",
-                            quantity=qty_str,
-                            reduceOnly=True,
+                            quantity=qty_str
                         )
                         print("Orden de CIERRE enviada. Respuesta de Binance:")
                         print(exit_order)
@@ -263,11 +238,6 @@ def tactica_salida_trailing_stop_wma(
 
     if trade_end_time is None:
         trade_end_time = time.time()
-
-    if not simular:
-        flat_ok = wait_until_flat_and_no_orders(client, symbol)
-        if not flat_ok:
-            cancel_all_open_orders_symbol(client, symbol)
 
     duration_sec = trade_end_time - trade_start_time
     duration_min = duration_sec / 60.0

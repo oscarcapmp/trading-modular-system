@@ -30,14 +30,12 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Apalancamiento máximo fijo por función `get_max_leverage_symbol` (20x en esta versión).
 - Comisiones: se infiere por diferencia de balance (la lectura de trades está disponible pero no se usa).
 - Entradas y salidas actuales solo MARKET; no hay stop-limit ni órdenes limit.
-- Trailing incluye freno de emergencia local: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
-- Al abrir la operación se coloca un STOP_MARKET reduceOnly en Binance (freno nativo server-side).
-- Si el trailing cierra, cancela el STOP nativo y valida que quede sin posición ni órdenes pendientes.
+- Trailing incluye freno de emergencia: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
 
 ## 7. WMA Pack (Pollita…Camaleona)
-- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Lima (610), Camaleona (987).
-- Se considera alineado en LONG cuando Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona (en SHORT se invierte el orden).
-- Al inicio (y cuando hay datos suficientes) se imprime si están alineadas o qué nombres rompen el orden o faltan datos.
+- WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Camaleona (987).
+- Se considera alineado cuando Pollita < Celeste < Dorada < Carmesí < Blanca < Camaleona.
+- Al inicio (y cuando hay datos suficientes) se imprime si están alineadas o qué nombres rompen el orden.
 
 ## 8. TODO
 - Implementar `tactica_entrada_wma34_debajo_y_cruce_89`.
