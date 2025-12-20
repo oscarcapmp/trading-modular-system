@@ -5,6 +5,7 @@ from infra_futuros import (
     format_quantity,
     get_hlc_futures,
     get_lot_size_filter_futures,
+    get_min_notional_futures,
     precheck_poder_trading,
     wma,
 )
@@ -136,15 +137,26 @@ def comprar_long_por_cruce_wma(
     pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
+    def _leer_poder(prompt: str, default_val: float) -> float | None:
+        raw = input(prompt).strip()
+        if raw == "":
+            return default_val
+        try:
+            return float(raw)
+        except ValueError:
+            print("❌ Valor inválido. Usa un número.")
+            return None
+
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
         return
 
-    poder_usar = float(
-        input(
-            f"Poder de trading (USDT) que deseas usar en esta entrada LONG (<= {trading_power:.4f}): "
-        ).strip()
+    poder_usar = _leer_poder(
+        f"Poder de trading (USDT) que deseas usar en esta entrada LONG (<= {trading_power:.4f}) [usa Enter para máximo]: ",
+        trading_power,
     )
+    if poder_usar is None:
+        return
 
     if poder_usar <= 0:
         print("❌ El poder de trading debe ser mayor que 0. Cancelando.")
@@ -202,10 +214,11 @@ def comprar_long_por_cruce_wma(
 
     try:
         min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
+        notional_min_filter = get_min_notional_futures(client, symbol)
         qty_est = min(raw_qty_est, max_qty)
         qty_est = floor_to_step(qty_est, step_size)
 
-        NOTIONAL_MIN = 100.0
+        NOTIONAL_MIN = notional_min_filter
         if qty_est < min_qty:
             notional_min_qty = min_qty * entry_price_ref
             print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")
@@ -339,15 +352,26 @@ def comprar_short_por_cruce_wma(
     pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
+    def _leer_poder(prompt: str, default_val: float) -> float | None:
+        raw = input(prompt).strip()
+        if raw == "":
+            return default_val
+        try:
+            return float(raw)
+        except ValueError:
+            print("❌ Valor inválido. Usa un número.")
+            return None
+
     if trading_power <= 0:
         print("❌ No tienes poder de trading disponible. Revisa tu balance de Futuros.")
         return
 
-    poder_usar = float(
-        input(
-            f"Poder de trading (USDT) que deseas usar en esta entrada SHORT (<= {trading_power:.4f}): "
-        ).strip()
+    poder_usar = _leer_poder(
+        f"Poder de trading (USDT) que deseas usar en esta entrada SHORT (<= {trading_power:.4f}) [usa Enter para máximo]: ",
+        trading_power,
     )
+    if poder_usar is None:
+        return
 
     if poder_usar <= 0:
         print("❌ El poder de trading debe ser mayor que 0. Cancelando.")
@@ -405,10 +429,11 @@ def comprar_short_por_cruce_wma(
 
     try:
         min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
+        notional_min_filter = get_min_notional_futures(client, symbol)
         qty_est = min(raw_qty_est, max_qty)
         qty_est = floor_to_step(qty_est, step_size)
 
-        NOTIONAL_MIN = 100.0
+        NOTIONAL_MIN = notional_min_filter
         if qty_est < min_qty:
             notional_min_qty = min_qty * entry_price_ref
             print("\n❌ Tras el cruce, la cantidad queda por debajo del minQty.")

@@ -117,6 +117,25 @@ def get_lot_size_filter_futures(client: UMFutures, symbol: str):
     raise RuntimeError(f"No se encontró filtro LOT_SIZE para {symbol} en Futuros.")
 
 
+def get_min_notional_futures(client: UMFutures, symbol: str, fallback: float = 5.0) -> float:
+    """
+    MIN_NOTIONAL para Futuros USDT-M.
+    Usa fallback (5 USDT) si no está presente en exchangeInfo.
+    """
+    try:
+        info = client.exchange_info()
+        for sym in info["symbols"]:
+            if sym["symbol"] != symbol:
+                continue
+            for f in sym["filters"]:
+                if f["filterType"] == "MIN_NOTIONAL":
+                    # Algunos campos vienen como notional o minNotional según versión
+                    return float(f.get("notional") or f.get("minNotional"))
+    except Exception:
+        pass
+    return fallback
+
+
 def get_futures_usdt_balance(client: UMFutures) -> float:
     """Balance disponible USDT en Futuros USDT-M."""
     try:
@@ -187,12 +206,13 @@ def precheck_poder_trading(client: UMFutures, symbol: str, poder_usdt: float) ->
     Recibe el PODER DE TRADING en USDT que el usuario quiere usar.
     Valida:
     - LOT_SIZE (minQty, stepSize)
-    - NOTIONAL mínimo (100 USDT).
+    - NOTIONAL mínimo (según filtro o fallback).
     """
     ticker = client.ticker_price(symbol=symbol)
     price = float(ticker["price"])
 
     min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
+    notional_min_filter = get_min_notional_futures(client, symbol)
 
     raw_qty_est = poder_usdt / price
     qty_est = min(raw_qty_est, max_qty)
@@ -210,8 +230,8 @@ def precheck_poder_trading(client: UMFutures, symbol: str, poder_usdt: float) ->
         print("Aumenta el poder de trading o usa otro símbolo con notional más bajo.\n")
         return False
 
-    # --- Validar NOTIONAL mínimo 100 USDT ---
-    NOTIONAL_MIN = 100.0
+    # --- Validar NOTIONAL mínimo según filtro ---
+    NOTIONAL_MIN = notional_min_filter
     notional_est = qty_est * price
 
     if notional_est < NOTIONAL_MIN:

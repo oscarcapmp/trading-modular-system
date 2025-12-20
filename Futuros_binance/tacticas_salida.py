@@ -5,6 +5,8 @@ from infra_futuros import (
     get_hlc_futures,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
+    get_lot_size_filter_futures,
+    floor_to_step,
     sonar_alarma,
     wma,
 )
@@ -64,6 +66,11 @@ def tactica_salida_trailing_stop_wma(
     trade_end_time = None
     exit_price_used = None
     exit_order_id = None
+    step_size = None
+    try:
+        _, _, step_size = get_lot_size_filter_futures(client, symbol)
+    except Exception as e:
+        print(f"⚠️ No se pudo leer LOT_SIZE para normalizar parciales: {e}")
 
     # Calcular WMA base para freno ATR (la más lejana al precio de entrada entre 34/55)
     try:
@@ -188,55 +195,63 @@ def tactica_salida_trailing_stop_wma(
                 if decision.get("action") == "sell_partial" and qty_remaining > 0:
                     pct = decision.get("pct", 0)
                     qty_partial = abs(qty_remaining) * pct
-                    if qty_partial > 0:
-                        qty_partial_str = format_quantity(qty_partial)
-                        price_event = close_current
-                        pnl_partial = (price_event - entry_exec_price) * qty_partial if side == "long" else (entry_exec_price - price_event) * qty_partial
-                        realized_price_used = price_event
-                        if simular:
-                            print(f"[SIMULACIÓN] Parcial Fase 1: {qty_partial_str}")
-                        else:
-                            exit_side_partial = "SELL" if side == "long" else "BUY"
-                            try:
-                                client.new_order(
-                                    symbol=symbol,
-                                    side=exit_side_partial,
-                                    type="MARKET",
-                                    quantity=qty_partial_str,
-                                    reduceOnly=True,
-                                )
-                                print(f"[TRAILING DIN] Parcial enviada {exit_side_partial} {qty_partial_str}")
-                                realized_price_used = float(
-                                    exit_order_partial.get("avgPrice")
-                                    or exit_order_partial.get("price")
-                                    or price_event
-                                )
-                                pnl_partial = (
-                                    (realized_price_used - entry_exec_price) * qty_partial
-                                    if side == "long"
-                                    else (entry_exec_price - realized_price_used) * qty_partial
-                                )
-                            except Exception as e:
-                                print(f"⚠️ Parcial Fase 1 falló: {e}")
-                                realized_price_used = price_event
-                        qty_remaining -= qty_partial
-                        realized_pnl_total_usdt += pnl_partial
-                        pnl_realizado_pct = (pnl_partial / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
-                        pnl_total_pct = (realized_pnl_total_usdt / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
-                        restante_pct = max(0.0, 100 - pct * 100)
-                        base_for_atr_txt = last_atr_level if last_atr_level is not None else "N/D"
-                        if not partial_logged:
-                            print(
-                                f"[EVENTO] Parcial Fase1 {pct*100:.1f}% | "
-                                f"Motivo: Trailing {decision.get('trailing_name')}({trailing_len_txt}) | "
-                                f"U-PnL={pnl_partial:.4f} USDT ({pnl_realizado_pct:.2f}%) "
-                                f"PnL_total={realized_pnl_total_usdt:.4f} USDT ({pnl_total_pct:.2f}%)"
+                    if step_size:
+                        qty_partial = floor_to_step(qty_partial, step_size)
+                    if qty_partial <= 0:
+                        print("[TRAILING DIN] Parcial no enviada: qty_normalizada=0")
+                        time.sleep(sleep_seconds)
+                        continue
+
+                    qty_partial_str = format_quantity(qty_partial)
+                    price_event = close_current
+                    pnl_partial = (price_event - entry_exec_price) * qty_partial if side == "long" else (entry_exec_price - price_event) * qty_partial
+                    realized_price_used = price_event
+                    if simular:
+                        print(f"[SIMULACIÓN] Parcial Fase 1: {qty_partial_str}")
+                        exit_order_partial = None
+                    else:
+                        exit_side_partial = "SELL" if side == "long" else "BUY"
+                        try:
+                            exit_order_partial = client.new_order(
+                                symbol=symbol,
+                                side=exit_side_partial,
+                                type="MARKET",
+                                quantity=qty_partial_str,
+                                reduceOnly=True,
                             )
-                            print(
-                                f"[EVENTO] Restante {restante_pct:.1f}% protegido por STOP ATR fijo @ {base_for_atr_txt} "
-                                f"esperando cruce 233/377 para Fase 2"
+                            print(f"[TRAILING DIN] Parcial enviada {exit_side_partial} {qty_partial_str}")
+                            realized_price_used = float(
+                                exit_order_partial.get("avgPrice")
+                                or exit_order_partial.get("price")
+                                or price_event
                             )
-                            partial_logged = True
+                            pnl_partial = (
+                                (realized_price_used - entry_exec_price) * qty_partial
+                                if side == "long"
+                                else (entry_exec_price - realized_price_used) * qty_partial
+                            )
+                        except Exception as e:
+                            print(f"⚠️ Parcial Fase 1 falló: {e}")
+                            realized_price_used = price_event
+                            exit_order_partial = None
+                    qty_remaining -= qty_partial
+                    realized_pnl_total_usdt += pnl_partial
+                    pnl_realizado_pct = (pnl_partial / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
+                    pnl_total_pct = (realized_pnl_total_usdt / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
+                    restante_pct = max(0.0, 100 - pct * 100)
+                    base_for_atr_txt = last_atr_level if last_atr_level is not None else "N/D"
+                    if not partial_logged:
+                        print(
+                            f"[EVENTO] Parcial Fase1 {pct*100:.1f}% | "
+                            f"Motivo: Trailing {decision.get('trailing_name')}({trailing_len_txt}) | "
+                            f"U-PnL={pnl_partial:.4f} USDT ({pnl_realizado_pct:.2f}%) "
+                            f"PnL_total={realized_pnl_total_usdt:.4f} USDT ({pnl_total_pct:.2f}%)"
+                        )
+                        print(
+                            f"[EVENTO] Restante {restante_pct:.1f}% protegido por STOP ATR fijo @ {base_for_atr_txt} "
+                            f"esperando cruce 233/377 para Fase 2"
+                        )
+                        partial_logged = True
                     time.sleep(sleep_seconds)
                     continue
 
@@ -354,13 +369,7 @@ def tactica_salida_trailing_stop_wma(
     duration_sec = trade_end_time - trade_start_time
     duration_min = duration_sec / 60.0
 
-    if exit_price_used is not None and entry_exec_price is not None:
-        if side == "long":
-            pnl_bruto_usdt = (exit_price_used - entry_exec_price) * qty_est
-        else:
-            pnl_bruto_usdt = (entry_exec_price - exit_price_used) * qty_est
-    else:
-        pnl_bruto_usdt = 0.0
+    pnl_bruto_usdt = realized_pnl_total_usdt
 
     if side == "long":
         if min_price_during_trade is not None and min_price_during_trade < entry_exec_price:
@@ -398,10 +407,7 @@ def tactica_salida_trailing_stop_wma(
 
     commission_usdt = pnl_bruto_usdt - pnl_real_usdt
 
-    if entry_margin_usdt != 0:
-        pnl_neto_pct = (pnl_real_usdt / entry_margin_usdt) * 100
-    else:
-        pnl_neto_pct = 0.0
+    pnl_neto_pct = (pnl_real_usdt / entry_margin_usdt) * 100 if entry_margin_usdt else 0.0
 
     if bal_ini != 0:
         aporte_balance_pct = (pnl_real_usdt / bal_ini) * 100
