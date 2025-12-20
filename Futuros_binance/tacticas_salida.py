@@ -136,6 +136,9 @@ def tactica_salida_trailing_stop_wma(
                 )
                 trailing_val_txt = f"{decision.get('trailing_value'):.4f}" if decision.get("trailing_value") is not None else "N/D"
                 trailing_len_txt = decision.get("trailing_len")
+                if trailing_len_txt is None:
+                    trailing_map = {"pollita": 34, "celeste": 55, "dorada": 89}
+                    trailing_len_txt = trailing_map.get(decision.get("trailing_name", "").lower(), "N/D")
                 print(
                     f"[TRAILING DIN] fase={decision.get('phase')} "
                     f"trailing={decision.get('trailing_name')}({trailing_len_txt})@{trailing_val_txt} "
