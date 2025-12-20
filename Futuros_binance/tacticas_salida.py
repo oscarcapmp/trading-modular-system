@@ -7,6 +7,7 @@ from infra_futuros import (
     get_futures_usdt_balance,
     get_max_leverage_symbol,
     sonar_alarma,
+    get_open_orders_safe,
     wait_until_flat_and_no_orders,
     wma,
 )
@@ -329,7 +330,7 @@ def tactica_salida_trailing_stop_wma(
         except Exception as e:
             print(f"⚠️ No se pudieron cancelar algo orders: {e}")
         try:
-            open_orders = client.get_open_orders(symbol=symbol)
+            open_orders = get_open_orders_safe(client, symbol)
             print(f"[VALIDACIÓN] openOrders restantes ({len(open_orders)}): {open_orders}")
             if open_orders:
                 print("⚠️ WARNING: Quedan órdenes abiertas en Binance.")

@@ -1,7 +1,10 @@
+import hmac
 import math
 import os
 import platform
 import time
+from hashlib import sha256
+from urllib.parse import urlencode
 
 try:
     from binance.um_futures import UMFutures
@@ -159,6 +162,45 @@ def get_futures_usdt_balance(client: UMFutures) -> float:
     return 0.0
 
 
+BASE_URL = "https://fapi.binance.com"
+
+
+def _signed_request_open_orders(method: str, path: str, params: dict | None = None):
+    api_key = os.getenv("BINANCE_API_KEY")
+    api_secret = os.getenv("BINANCE_API_SECRET")
+    if not api_key or not api_secret:
+        raise RuntimeError("Faltan BINANCE_API_KEY o BINANCE_API_SECRET para solicitar openOrders.")
+    params = params or {}
+    params["timestamp"] = int(time.time() * 1000)
+    params.setdefault("recvWindow", 5000)
+    query = urlencode(params, doseq=True)
+    signature = hmac.new(api_secret.encode(), query.encode(), sha256).hexdigest()
+    signed_params = dict(params)
+    signed_params["signature"] = signature
+
+    import requests
+
+    url = f"{BASE_URL}{path}"
+    headers = {"X-MBX-APIKEY": api_key}
+    if method == "GET":
+        resp = requests.request(method, url, headers=headers, params=signed_params)
+    else:
+        resp = requests.request(method, url, headers=headers, data=signed_params)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_open_orders_safe(client, symbol: str):
+    try:
+        return client.get_open_orders(symbol=symbol)
+    except Exception:
+        try:
+            return _signed_request_open_orders("GET", "/fapi/v1/openOrders", {"symbol": symbol})
+        except Exception as e:
+            print(f"⚠️ No se pudieron obtener openOrders para {symbol}: {e}")
+            return []
+
+
 def get_max_leverage_symbol(client: UMFutures, symbol: str) -> int:
     """
     En tu versión de la librería no está disponible leverage_bracket.
@@ -190,7 +232,7 @@ def place_emergency_stop_order(client, symbol: str, side: str, qty_str: str, sto
         )
         print("[FRENO NATIVO] OK Binance:", resp)
         try:
-            orders = client.get_open_orders(symbol=symbol)
+            orders = get_open_orders_safe(client, symbol)
             print("[FRENO NATIVO] Open orders:", orders)
             if not orders:
                 print("⚠️ [FRENO NATIVO] WARNING: STOP_MARKET no aparece en órdenes abiertas.")
@@ -214,7 +256,7 @@ def cancel_order_safe(client, symbol: str, order_id):
 
 def cancel_all_open_orders_symbol(client, symbol: str):
     try:
-        open_orders = client.get_open_orders(symbol=symbol)
+        open_orders = get_open_orders_safe(client, symbol)
     except Exception as e:
         print(f"⚠️ No se pudieron leer órdenes abiertas para {symbol}: {e}")
         return
@@ -245,7 +287,7 @@ def wait_until_flat_and_no_orders(client, symbol: str, timeout_sec: float = 10, 
                 break
             has_pos = abs(position_amt) > 0
 
-            open_orders = client.get_open_orders(symbol=symbol)
+            open_orders = get_open_orders_safe(client, symbol)
             has_orders = len(open_orders) > 0
 
             if not has_pos and not has_orders:
