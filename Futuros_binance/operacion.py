@@ -93,7 +93,7 @@ def comprar_long_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool = False,
+    trailing_dinamico_on: bool,
     pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
@@ -262,6 +262,8 @@ def comprar_long_por_cruce_wma(
         side="long",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
     )
 
 
@@ -279,7 +281,7 @@ def comprar_short_por_cruce_wma(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool = False,
+    trailing_dinamico_on: bool,
     pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
@@ -448,6 +450,8 @@ def comprar_short_por_cruce_wma(
         side="short",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
     )
 
 
@@ -455,9 +459,77 @@ def mantener_posicion(*args, **kwargs):
     print("Manteniendo posición actual (placeholder).")
 
 
-def run_long_strategy(*args, **kwargs):
-    return comprar_long_por_cruce_wma(*args, **kwargs)
+def run_long_strategy(
+    client,
+    symbol: str,
+    base_asset: str,
+    simular: bool,
+    interval: str,
+    sleep_seconds: int,
+    wma_entry_len: int,
+    wma_stop_len: int,
+    wait_on_close: bool,
+    emergency_atr_on: bool,
+    atr_mult: float,
+    balance_usdt: float,
+    trading_power: float,
+    max_lev: int,
+    trailing_dinamico_on: bool,
+    pct_fase1: float,
+):
+    return comprar_long_por_cruce_wma(
+        client=client,
+        symbol=symbol,
+        base_asset=base_asset,
+        simular=simular,
+        interval=interval,
+        sleep_seconds=sleep_seconds,
+        wma_entry_len=wma_entry_len,
+        wma_stop_len=wma_stop_len,
+        wait_on_close=wait_on_close,
+        emergency_atr_on=emergency_atr_on,
+        balance_usdt=balance_usdt,
+        trading_power=trading_power,
+        max_lev=max_lev,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
+        atr_mult=atr_mult,
+    )
 
 
-def run_short_strategy(*args, **kwargs):
-    return comprar_short_por_cruce_wma(*args, **kwargs)
+def run_short_strategy(
+    client,
+    symbol: str,
+    base_asset: str,
+    simular: bool,
+    interval: str,
+    sleep_seconds: int,
+    wma_entry_len: int,
+    wma_stop_len: int,
+    wait_on_close: bool,
+    emergency_atr_on: bool,
+    atr_mult: float,
+    balance_usdt: float,
+    trading_power: float,
+    max_lev: int,
+    trailing_dinamico_on: bool,
+    pct_fase1: float,
+):
+    return comprar_short_por_cruce_wma(
+        client=client,
+        symbol=symbol,
+        base_asset=base_asset,
+        simular=simular,
+        interval=interval,
+        sleep_seconds=sleep_seconds,
+        wma_entry_len=wma_entry_len,
+        wma_stop_len=wma_stop_len,
+        wait_on_close=wait_on_close,
+        emergency_atr_on=emergency_atr_on,
+        balance_usdt=balance_usdt,
+        trading_power=trading_power,
+        max_lev=max_lev,
+        trailing_dinamico_on=trailing_dinamico_on,
+        pct_fase1=pct_fase1,
+        atr_mult=atr_mult,
+    )

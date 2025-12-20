@@ -9,7 +9,6 @@ from infra_futuros import (
     wma,
 )
 from config_wma_pack import MAX_WMA_PACK_LEN
-from indicators.wma_pack import calc_wma_pack, check_wma_alignment
 from Trailing_dinamico import (
     calcular_wmas_trailing,
     calcular_wmas_trailing_prev,
@@ -32,20 +31,20 @@ def tactica_salida_trailing_stop_wma(
     entry_margin_usdt: float,
     simular: bool,
     side: str,
+    trailing_dinamico_on: bool,
     entry_order_id: int | None = None,
     balance_inicial_futuros: float | None = None,
     emergency_atr_on: bool = True,
     atr_len: int = 14,
     atr_mult: float = 1.5,
-    trailing_dinamico_on: bool = False,
     pct_fase1: float = 50.0,
 ):
     last_state = None
     last_closed_close = None
-    alignment_reported = False
     trailing_state = init_trailing_state(pct_fase1) if trailing_dinamico_on else None
     qty_remaining = qty_est
-    debug_logged = False
+    stop_mode_logged = False
+    invalid_stop_reported = False
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -70,24 +69,16 @@ def tactica_salida_trailing_stop_wma(
             )
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
 
-            if not debug_logged:
-                print(f"[DEBUG] trailing_dinamico_on={trailing_dinamico_on} wma_stop_len={wma_stop_len}")
-                debug_logged = True
+            if not stop_mode_logged:
+                mode_txt = "DINAMICO" if trailing_dinamico_on else "CLASICO"
+                print(f"[DEBUG] STOP_MODE={mode_txt}")
+                stop_mode_logged = True
 
             wma_current = wma(closes, wma_stop_len) if (not trailing_dinamico_on and wma_stop_len > 0) else None
             wma_prev = wma(closes[:-1], wma_stop_len) if (not trailing_dinamico_on and wma_stop_len > 0) else None
 
             close_current = closes[-1]
             close_prev = closes[-2]
-
-            if not alignment_reported and not trailing_dinamico_on:
-                try:
-                    wma_pack_values = calc_wma_pack(closes)
-                    _, _, msg_align = check_wma_alignment(wma_pack_values, side=side)
-                    print(msg_align)
-                    alignment_reported = True
-                except Exception as e:
-                    print(f"⚠️ No se pudo evaluar alineación de WMA Pack: {e}")
 
             atr_val = atr(highs, lows, closes, atr_len) if emergency_atr_on else None
             atr_txt = f"{atr_val:.4f}" if atr_val is not None else "N/D"
@@ -182,9 +173,10 @@ def tactica_salida_trailing_stop_wma(
 
             else:
                 if wma_stop_len <= 0:
-                    print("WMA_STOP inválida (<=0). Ajusta la longitud o usa trailing dinámico.")
-                    time.sleep(sleep_seconds)
-                    continue
+                    if not invalid_stop_reported:
+                        print("WMA_STOP inválida (<=0). Ajusta la longitud o usa trailing dinámico.")
+                        invalid_stop_reported = True
+                    return
                 current_state = "above" if close_current > wma_current else "below"
                 prev_state = "above" if close_prev > wma_prev else "below"
                 state_for_signal = prev_state if wait_on_close else current_state
