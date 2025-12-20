@@ -172,15 +172,18 @@ def place_emergency_stop_order(client, symbol: str, side: str, qty_str: str, sto
     Coloca una orden STOP_MARKET reduceOnly en Binance como freno nativo.
     Devuelve dict con orderId (None en simulación).
     """
-    stop_price_fmt = f"{stop_price:.2f}"
+    stop_price_fmt = f"{stop_price:.8f}"
     if is_simulation:
         print(f"[FRENO NATIVO] Simulación: stopPrice calculado {stop_price_fmt}. No se envía orden.")
         return {"orderId": None}
 
     exit_side = "SELL" if side == "long" else "BUY"
-    print("[FRENO NATIVO] Intentando STOP_MARKET", exit_side, "stopPrice", stop_price_fmt, "qty", qty_str)
     try:
-        resp = client.new_order(
+        print(
+            f"[FRENO NATIVO] Enviando STOP_MARKET reduceOnly -> "
+            f"{exit_side} {qty_str} @ stopPrice {stop_price_fmt}"
+        )
+        order = client.new_order(
             symbol=symbol,
             side=exit_side,
             type="STOP_MARKET",
@@ -188,17 +191,10 @@ def place_emergency_stop_order(client, symbol: str, side: str, qty_str: str, sto
             quantity=qty_str,
             reduceOnly=True,
         )
-        print("[FRENO NATIVO] OK Binance:", resp)
-        try:
-            orders = client.get_open_orders(symbol=symbol)
-            print("[FRENO NATIVO] Open orders:", orders)
-            if not orders:
-                print("⚠️ [FRENO NATIVO] WARNING: STOP_MARKET no aparece en órdenes abiertas.")
-        except Exception as e:
-            print(f"⚠️ [FRENO NATIVO] No se pudieron leer open_orders: {e}")
-        return resp
+        print(f"[FRENO NATIVO] Colocado en Binance. orderId: {order.get('orderId')}, stopPrice: {stop_price_fmt}")
+        return order
     except Exception as e:
-        print("[FRENO NATIVO] ERROR Binance:", e)
+        print(f"⚠️ No se pudo colocar freno nativo STOP_MARKET: {e}")
         return {"orderId": None}
 
 
