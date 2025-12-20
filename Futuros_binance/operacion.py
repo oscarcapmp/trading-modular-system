@@ -247,7 +247,6 @@ def comprar_long_por_cruce_wma(
     print("\n=== Apertura LONG realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
     emergency_algo_id = None
-    emergency_price = None
     try:
         atr_len = 14
         limit_needed = max(wma_stop_len + 3, atr_len + 2)
@@ -263,7 +262,6 @@ def comprar_long_por_cruce_wma(
                 side=exit_side,
                 stop_price=emergency_price,
                 qty_str=qty_str,
-                atr_ref=atr_ref,
             )
             emergency_algo_id = order.get("algoId")
         elif emergency_atr_on:
@@ -290,9 +288,6 @@ def comprar_long_por_cruce_wma(
         balance_inicial_futuros=balance_usdt,
         emergency_algo_id=emergency_algo_id,
         emergency_stop_active=emergency_atr_on,
-        emergency_level_fixed=emergency_price if emergency_atr_on else None,
-        emergency_side_close=exit_side,
-        emergency_enabled=emergency_atr_on,
     )
 
 
@@ -460,7 +455,6 @@ def comprar_short_por_cruce_wma(
     print("\n=== Apertura SHORT realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
     emergency_algo_id = None
-    emergency_price = None
     try:
         atr_len = 14
         limit_needed = max(wma_stop_len + 3, atr_len + 2)
@@ -476,7 +470,6 @@ def comprar_short_por_cruce_wma(
                 side=exit_side,
                 stop_price=emergency_price,
                 qty_str=qty_str,
-                atr_ref=atr_ref,
             )
             emergency_algo_id = order.get("algoId")
         elif emergency_atr_on:
@@ -503,9 +496,6 @@ def comprar_short_por_cruce_wma(
         balance_inicial_futuros=balance_usdt,
         emergency_algo_id=emergency_algo_id,
         emergency_stop_active=emergency_atr_on,
-        emergency_level_fixed=emergency_price if emergency_atr_on else None,
-        emergency_side_close=exit_side,
-        emergency_enabled=emergency_atr_on,
     )
 
 

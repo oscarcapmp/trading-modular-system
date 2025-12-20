@@ -2,7 +2,6 @@ import time
 from infra_futuros import (
     atr,
     cancel_all_open_orders_symbol,
-    format_quantity,
     get_hlc_futures,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
@@ -36,9 +35,6 @@ def tactica_salida_trailing_stop_wma(
     emergency_mult: float = 1.5,
     emergency_algo_id: int | None = None,
     emergency_stop_active: bool = True,
-    emergency_level_fixed: float | None = None,
-    emergency_side_close: str | None = None,
-    emergency_enabled: bool = True,
 ):
     last_state = None
     last_closed_close = None
@@ -62,8 +58,6 @@ def tactica_salida_trailing_stop_wma(
 
     while True:
         try:
-            pos_amt = 0.0
-            mark_price = None
             limit_needed = max(wma_stop_len + 3, atr_len + 2, MAX_WMA_PACK_LEN + 1)
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
 
@@ -71,13 +65,8 @@ def tactica_salida_trailing_stop_wma(
                 try:
                     pos_list = client.get_position_risk(symbol=symbol)
                     pos_amt = 0.0
-                    mark_price = None
                     for p in pos_list:
                         pos_amt = float(p.get("positionAmt", "0") or 0.0)
-                        try:
-                            mark_price = float(p.get("markPrice", "0") or 0.0)
-                        except Exception:
-                            mark_price = None
                         break
                     if abs(pos_amt) == 0:
                         print("Posición ya cerrada en Binance. Terminando trailing.")
@@ -90,8 +79,6 @@ def tactica_salida_trailing_stop_wma(
                         return
                 except Exception as e:
                     print(f"⚠️ No se pudo leer posición actual: {e}")
-                    pos_amt = 0.0
-                    mark_price = None
 
             if len(closes) < wma_stop_len + 2:
                 print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
@@ -129,75 +116,8 @@ def tactica_salida_trailing_stop_wma(
                     )
                     emergency_announced = True
 
-            effective_emergency_level = emergency_level_fixed if emergency_level_fixed is not None else emergency_level
             atr_txt = f"{emergency_atr_ref:.4f}" if emergency_atr_ref is not None else "N/D"
-            emergency_txt = f"{effective_emergency_level:.4f}" if effective_emergency_level is not None else "N/D"
-
-            if (
-                emergency_enabled
-                and effective_emergency_level is not None
-                and mark_price is not None
-            ):
-                in_zone = (side == "long" and mark_price <= effective_emergency_level) or (
-                    side == "short" and mark_price >= effective_emergency_level
-                )
-                if in_zone:
-                    print("[FRENO] markPrice tocó nivel. Verificando ejecución en Binance...")
-                    if abs(pos_amt) == 0:
-                        try:
-                            cancel_all_open_algo_orders(client, symbol)
-                        except Exception as e:
-                            print(f"⚠️ No se pudo cancelar algo orders: {e}")
-                        cancel_all_open_orders_symbol(client, symbol)
-                        return
-
-                    try:
-                        algo_open = get_open_algo_orders(client, symbol)
-                    except Exception as e:
-                        print(f"⚠️ No se pudieron leer openAlgoOrders: {e}")
-
-                    start_wait = time.time()
-                    last_pos_amt = pos_amt
-                    while time.time() - start_wait < 2.0:
-                        time.sleep(0.25)
-                        try:
-                            pos_list_chk = client.get_position_risk(symbol=symbol)
-                            for p in pos_list_chk:
-                                last_pos_amt = float(p.get("positionAmt", "0") or 0.0)
-                                break
-                            if abs(last_pos_amt) == 0:
-                                try:
-                                    cancel_all_open_algo_orders(client, symbol)
-                                except Exception as e:
-                                    print(f"⚠️ No se pudo cancelar algo orders: {e}")
-                                cancel_all_open_orders_symbol(client, symbol)
-                                return
-                        except Exception as e:
-                            print(f"⚠️ No se pudo re-leer posición durante verificación de freno: {e}")
-
-                    if abs(last_pos_amt) != 0:
-                        print("⚠️ Freno nativo NO cerró. Ejecutando FALLBACK MARKET.")
-                        fallback_qty = abs(last_pos_amt)
-                        qty_fallback_str = format_quantity(fallback_qty)
-                        exit_side_fallback = emergency_side_close or ("SELL" if side == "long" else "BUY")
-                        try:
-                            resp = client.new_order(
-                                symbol=symbol,
-                                side=exit_side_fallback,
-                                type="MARKET",
-                                quantity=qty_fallback_str,
-                                reduceOnly=True,
-                            )
-                            print("[FALLBACK MARKET] Orden enviada:", resp)
-                        except Exception as e:
-                            print(f"❌ Error enviando FALLBACK MARKET: {e}")
-                        try:
-                            cancel_all_open_algo_orders(client, symbol)
-                        except Exception as e:
-                            print(f"⚠️ No se pudieron cancelar algo orders tras fallback: {e}")
-                        cancel_all_open_orders_symbol(client, symbol)
-                        wait_until_flat_and_no_orders(client, symbol)
-                        return
+            emergency_txt = f"{emergency_level:.4f}" if emergency_level is not None else "N/D"
 
             if side == "long":
                 if close_current < min_price_during_trade:
@@ -279,11 +199,6 @@ def tactica_salida_trailing_stop_wma(
                 print(f"Modo: {'SIMULACIÓN' if simular else 'REAL'}\n")
 
                 if not simular:
-                    if emergency_stop_active:
-                        try:
-                            cancel_all_open_algo_orders(client, symbol)
-                        except Exception as e:
-                            print(f"⚠️ No se pudieron cancelar algo orders antes del cierre: {e}")
                     exit_side = "SELL" if side == "long" else "BUY"
                     try:
                         print(f"📤 Enviando orden MARKET {exit_side} para cerrar {lado_txt}...")
