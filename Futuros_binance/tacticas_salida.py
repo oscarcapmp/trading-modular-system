@@ -45,6 +45,8 @@ def tactica_salida_trailing_stop_wma(
     qty_remaining = qty_est
     stop_mode_logged = False
     invalid_stop_reported = False
+    base_wma_ref = None
+    base_wma_len = None
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -57,6 +59,24 @@ def tactica_salida_trailing_stop_wma(
     trade_end_time = None
     exit_price_used = None
     exit_order_id = None
+
+    # Calcular WMA base para freno ATR (la más lejana al precio de entrada entre 34/55)
+    try:
+        highs_init, lows_init, closes_init = get_hlc_futures(client, symbol, interval, limit=MAX_WMA_PACK_LEN + 2)
+        wma_34 = wma(closes_init, 34)
+        wma_55 = wma(closes_init, 55)
+        if entry_exec_price is not None:
+            dist_34 = abs(entry_exec_price - wma_34)
+            dist_55 = abs(entry_exec_price - wma_55)
+            if dist_34 >= dist_55:
+                base_wma_ref = wma_34
+                base_wma_len = 34
+            else:
+                base_wma_ref = wma_55
+                base_wma_len = 55
+    except Exception:
+        base_wma_ref = entry_exec_price
+        base_wma_len = None
 
     while True:
         try:
@@ -91,16 +111,18 @@ def tactica_salida_trailing_stop_wma(
                     max_price_during_trade = close_current
             # Freno ATR local
             if emergency_atr_on and atr_val is not None and entry_exec_price is not None:
+                base_for_atr = base_wma_ref if base_wma_ref is not None else entry_exec_price
                 if side == "long":
-                    atr_level = entry_exec_price - atr_mult * atr_val
+                    atr_level = base_for_atr - atr_mult * atr_val
                     atr_triggered = close_current <= atr_level
                 else:
-                    atr_level = entry_exec_price + atr_mult * atr_val
+                    atr_level = base_for_atr + atr_mult * atr_val
                     atr_triggered = close_current >= atr_level
                 if atr_triggered and qty_remaining > 0:
                     qty_close_str = format_quantity(abs(qty_remaining))
                     print(
                         f"[FRENO ATR LOCAL] k={atr_mult} ATR{atr_len}={atr_val:.4f} "
+                        f"base_wma={base_for_atr:.4f} "
                         f"umbral={atr_level:.4f} -> cerrando MARKET (reduce-only)"
                     )
                     if simular:
