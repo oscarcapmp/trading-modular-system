@@ -135,9 +135,10 @@ def tactica_salida_trailing_stop_wma(
                     wmas_prev=wmas_dyn_prev,
                 )
                 trailing_val_txt = f"{decision.get('trailing_value'):.4f}" if decision.get("trailing_value") is not None else "N/D"
+                trailing_len_txt = decision.get("trailing_len")
                 print(
                     f"[TRAILING DIN] fase={decision.get('phase')} "
-                    f"trailing={decision.get('trailing_name')}@{trailing_val_txt} "
+                    f"trailing={decision.get('trailing_name')}({trailing_len_txt})@{trailing_val_txt} "
                     f"dist34={decision.get('dist_pollita')} dist55={decision.get('dist_celeste')} "
                     f"cruce233_377={decision.get('cross_233_377')} action={decision.get('action')}"
                 )
