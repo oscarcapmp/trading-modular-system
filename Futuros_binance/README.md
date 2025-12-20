@@ -3,8 +3,9 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
 - Incluye freno de emergencia por ATR (1.5×ATR desde la WMA de stop) para cerrar si el precio se aleja demasiado.
 
 ### Notas rápidas
-- Freno de emergencia nativo: se coloca STOP_MARKET en Binance al abrir operación.
-- Si el trailing cierra, el bot cancela el STOP nativo y verifica posición=0 y sin órdenes abiertas.
+- Desde 2025-12-09 Binance mueve stops condicionales USDT-M a Algo Orders; el freno nativo ahora es un STOP_MARKET CONDITIONAL (Algo Order) server-side.
+- Freno de emergencia nativo: se coloca como Algo Order al abrir; sobrevive si el servidor cae.
+- Si el trailing cierra, el bot cancela el STOP nativo, valida que la posición quede en 0 y que no existan órdenes (openOrders/openAlgoOrders vacíos).
 
 ## 2. Requisitos
 - Python 3.10+ recomendado.
@@ -54,6 +55,10 @@ Bot simple para Futuros USDT-M: entra por cruce de WMA (long/short), abre con or
 - WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Lima (610), Camaleona (987).
 - Alineadas en LONG si: Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona (en SHORT se invierte el orden).
 - Ejemplo de log: `WMAs alineadas ✅: Pollita < Celeste < Dorada < Carmesí < Blanca < Lima < Camaleona` o `WMAs NO alineadas ❌: rompen orden: Dorada, Blanca | datos insuficientes: Lima`.
+
+## 8. Validación de freno nativo (Algo Orders)
+- UI de Binance Futures USDT-M → pestaña Stop/Condicional.
+- CLI/logs: se usa `get_open_algo_orders(symbol)` para listar y se cancelan con `cancel_all_open_algo_orders(symbol)` al cerrar.
 
 ## 8. Buenas prácticas personales
 - Probar siempre en simulación antes de usar real.

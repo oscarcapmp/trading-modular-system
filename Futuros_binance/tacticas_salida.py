@@ -2,7 +2,6 @@ import time
 from infra_futuros import (
     atr,
     cancel_all_open_orders_symbol,
-    cancel_order_safe,
     get_hlc_futures,
     get_futures_usdt_balance,
     get_max_leverage_symbol,
@@ -10,6 +9,7 @@ from infra_futuros import (
     wait_until_flat_and_no_orders,
     wma,
 )
+from binance_algo_orders import cancel_all_open_algo_orders, get_open_algo_orders
 from config_wma_pack import MAX_WMA_PACK_LEN
 from indicators.wma_pack import calc_wma_pack, check_wma_alignment
 
@@ -33,7 +33,7 @@ def tactica_salida_trailing_stop_wma(
     emergency_atr_on: bool = True,
     atr_len: int = 14,
     emergency_mult: float = 1.5,
-    emergency_order_id: int | None = None,
+    emergency_algo_id: int | None = None,
     emergency_stop_active: bool = True,
 ):
     last_state = None
@@ -72,7 +72,10 @@ def tactica_salida_trailing_stop_wma(
                         print("Posición ya cerrada en Binance. Terminando trailing.")
                         cancel_all_open_orders_symbol(client, symbol)
                         if emergency_stop_active:
-                            cancel_order_safe(client, symbol, emergency_order_id)
+                            try:
+                                cancel_all_open_algo_orders(client, symbol)
+                            except Exception as e:
+                                print(f"⚠️ No se pudo cancelar algo orders: {e}")
                         return
                 except Exception as e:
                     print(f"⚠️ No se pudo leer posición actual: {e}")
@@ -181,9 +184,6 @@ def tactica_salida_trailing_stop_wma(
                 exit_price = exit_price_used
                 trade_end_time = time.time()
 
-                if emergency_stop_active:
-                    cancel_order_safe(client, symbol, emergency_order_id)
-
                 sonar_alarma()
 
                 lado_txt = "LONG" if side == "long" else "SHORT"
@@ -239,6 +239,24 @@ def tactica_salida_trailing_stop_wma(
         flat_ok = wait_until_flat_and_no_orders(client, symbol)
         if not flat_ok:
             cancel_all_open_orders_symbol(client, symbol)
+        try:
+            cancel_all_open_algo_orders(client, symbol)
+        except Exception as e:
+            print(f"⚠️ No se pudieron cancelar algo orders: {e}")
+        try:
+            open_orders = client.get_open_orders(symbol=symbol)
+            print(f"[VALIDACIÓN] openOrders restantes ({len(open_orders)}): {open_orders}")
+            if open_orders:
+                print("⚠️ WARNING: Quedan órdenes abiertas en Binance.")
+        except Exception as e:
+            print(f"⚠️ No se pudieron leer openOrders: {e}")
+        try:
+            open_algo = get_open_algo_orders(client, symbol)
+            print(f"[VALIDACIÓN] openAlgoOrders ({len(open_algo)}): {open_algo}")
+            if open_algo:
+                print("⚠️ WARNING: Quedan algo orders abiertas en Binance.")
+        except Exception as e:
+            print(f"⚠️ No se pudieron leer openAlgoOrders: {e}")
 
     duration_sec = trade_end_time - trade_start_time
     duration_min = duration_sec / 60.0
