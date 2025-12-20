@@ -1,12 +1,51 @@
 import time
 from infra_futuros import (
+    atr,
     floor_to_step,
     format_quantity,
+    get_hlc_futures,
     get_lot_size_filter_futures,
     precheck_poder_trading,
+    wma,
 )
 from tacticas_entrada import tactica_entrada_cruce_wma
 from tacticas_salida import tactica_salida_trailing_stop_wma
+
+
+def _calc_atr_stop_info(client, symbol: str, interval: str, entry_price: float, side: str, atr_len: int, atr_mult: float):
+    try:
+        if entry_price is None:
+            return None
+        highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=120)
+        if len(closes) < 60:
+            return None
+
+        wma_34 = wma(closes, 34)
+        wma_55 = wma(closes, 55)
+
+        dist_34 = abs(entry_price - wma_34)
+        dist_55 = abs(entry_price - wma_55)
+        if dist_34 >= dist_55:
+            base_price = wma_34
+            base_len = 34
+            base_name = "Pollita"
+        else:
+            base_price = wma_55
+            base_len = 55
+            base_name = "Celeste"
+
+        atr_val = atr(highs, lows, closes, atr_len)
+        if atr_val is None:
+            return None
+
+        if side == "long":
+            stop_price = base_price - atr_mult * atr_val
+        else:
+            stop_price = base_price + atr_mult * atr_val
+
+        return base_name, base_len, base_price, atr_val, stop_price
+    except Exception:
+        return None
 
 
 def get_current_position(client, symbol: str):
@@ -236,6 +275,21 @@ def comprar_long_por_cruce_wma(
                     print(f"Precio entrada:  {entry_exec_price}")
                     print(f"Leverage real:   {lev_pos}x")
                     print(f"Margen aprox:    {entry_margin_usdt:.4f} USDT\n")
+                    atr_stop_info = _calc_atr_stop_info(
+                        client=client,
+                        symbol=symbol,
+                        interval=interval,
+                        entry_price=entry_exec_price,
+                        side="long",
+                        atr_len=14,
+                        atr_mult=atr_mult,
+                    )
+                    if atr_stop_info:
+                        base_name, base_len, base_price, atr_val_info, stop_price = atr_stop_info
+                        print(
+                            f"[INFO] ATR_STOP_FIJO base={base_name}({base_len})@{base_price:.4f} "
+                            f"ATR={atr_val_info:.4f} k={atr_mult} STOP={stop_price:.4f}"
+                        )
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
@@ -424,6 +478,21 @@ def comprar_short_por_cruce_wma(
                     print(f"Precio entrada:  {entry_exec_price}")
                     print(f"Leverage real:   {lev_pos}x")
                     print(f"Margen aprox:    {entry_margin_usdt:.4f} USDT\n")
+                    atr_stop_info = _calc_atr_stop_info(
+                        client=client,
+                        symbol=symbol,
+                        interval=interval,
+                        entry_price=entry_exec_price,
+                        side="short",
+                        atr_len=14,
+                        atr_mult=atr_mult,
+                    )
+                    if atr_stop_info:
+                        base_name, base_len, base_price, atr_val_info, stop_price = atr_stop_info
+                        print(
+                            f"[INFO] ATR_STOP_FIJO base={base_name}({base_len})@{base_price:.4f} "
+                            f"ATR={atr_val_info:.4f} k={atr_mult} STOP={stop_price:.4f}"
+                        )
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 

@@ -47,6 +47,11 @@ def tactica_salida_trailing_stop_wma(
     invalid_stop_reported = False
     base_wma_ref = None
     base_wma_len = None
+    base_wma_name = None
+    realized_pnl_total_usdt = 0.0
+    partial_logged = False
+    phase2_logged = False
+    last_atr_level = None
 
     if side == "long":
         min_price_during_trade = entry_exec_price
@@ -71,12 +76,15 @@ def tactica_salida_trailing_stop_wma(
             if dist_34 >= dist_55:
                 base_wma_ref = wma_34
                 base_wma_len = 34
+                base_wma_name = "Pollita"
             else:
                 base_wma_ref = wma_55
                 base_wma_len = 55
+                base_wma_name = "Celeste"
     except Exception:
         base_wma_ref = entry_exec_price
         base_wma_len = None
+        base_wma_name = None
 
     while True:
         try:
@@ -118,12 +126,21 @@ def tactica_salida_trailing_stop_wma(
                 else:
                     atr_level = base_for_atr + atr_mult * atr_val
                     atr_triggered = close_current >= atr_level
+                last_atr_level = atr_level
                 if atr_triggered and qty_remaining > 0:
                     qty_close_str = format_quantity(abs(qty_remaining))
+                    price_event = close_current
+                    pnl_remain = (price_event - entry_exec_price) * qty_remaining if side == "long" else (entry_exec_price - price_event) * qty_remaining
+                    realized_pnl_total_usdt += pnl_remain
+                    pnl_pct_total = (realized_pnl_total_usdt / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
                     print(
                         f"[FRENO ATR LOCAL] k={atr_mult} ATR{atr_len}={atr_val:.4f} "
                         f"base_wma={base_for_atr:.4f} "
                         f"umbral={atr_level:.4f} -> cerrando MARKET (reduce-only)"
+                    )
+                    print(
+                        f"[EVENTO] Cierre total por ATR | PnL_realizado={pnl_remain:.4f} USDT "
+                        f"PnL_total={realized_pnl_total_usdt:.4f} USDT ({pnl_pct_total:.2f}%)"
                     )
                     if simular:
                         print(f"[SIMULACIÓN] Cierre total por ATR local qty={qty_close_str}")
@@ -173,6 +190,9 @@ def tactica_salida_trailing_stop_wma(
                     qty_partial = abs(qty_remaining) * pct
                     if qty_partial > 0:
                         qty_partial_str = format_quantity(qty_partial)
+                        price_event = close_current
+                        pnl_partial = (price_event - entry_exec_price) * qty_partial if side == "long" else (entry_exec_price - price_event) * qty_partial
+                        realized_price_used = price_event
                         if simular:
                             print(f"[SIMULACIÓN] Parcial Fase 1: {qty_partial_str}")
                         else:
@@ -186,13 +206,44 @@ def tactica_salida_trailing_stop_wma(
                                     reduceOnly=True,
                                 )
                                 print(f"[TRAILING DIN] Parcial enviada {exit_side_partial} {qty_partial_str}")
+                                realized_price_used = float(
+                                    exit_order_partial.get("avgPrice")
+                                    or exit_order_partial.get("price")
+                                    or price_event
+                                )
+                                pnl_partial = (
+                                    (realized_price_used - entry_exec_price) * qty_partial
+                                    if side == "long"
+                                    else (entry_exec_price - realized_price_used) * qty_partial
+                                )
                             except Exception as e:
                                 print(f"⚠️ Parcial Fase 1 falló: {e}")
+                                realized_price_used = price_event
                         qty_remaining -= qty_partial
+                        realized_pnl_total_usdt += pnl_partial
+                        pnl_realizado_pct = (pnl_partial / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
+                        pnl_total_pct = (realized_pnl_total_usdt / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
+                        restante_pct = max(0.0, 100 - pct * 100)
+                        base_for_atr_txt = last_atr_level if last_atr_level is not None else "N/D"
+                        if not partial_logged:
+                            print(
+                                f"[EVENTO] Parcial Fase1 {pct*100:.1f}% | "
+                                f"Motivo: Trailing {decision.get('trailing_name')}({trailing_len_txt}) | "
+                                f"U-PnL={pnl_partial:.4f} USDT ({pnl_realizado_pct:.2f}%) "
+                                f"PnL_total={realized_pnl_total_usdt:.4f} USDT ({pnl_total_pct:.2f}%)"
+                            )
+                            print(
+                                f"[EVENTO] Restante {restante_pct:.1f}% protegido por STOP ATR fijo @ {base_for_atr_txt} "
+                                f"esperando cruce 233/377 para Fase 2"
+                            )
+                            partial_logged = True
                     time.sleep(sleep_seconds)
                     continue
 
                 if decision.get("action") == "close_all":
+                    if not phase2_logged:
+                        print("[EVENTO] Activada Fase 2 del trailing dinámico (cruce 233/377)")
+                        phase2_logged = True
                     trigger_exit = True
                     motivo = "Trailing dinámico fase 2"
                     exit_price = price_for_stop
@@ -250,6 +301,14 @@ def tactica_salida_trailing_stop_wma(
                 print(f"Cantidad a cerrar: {qty_close_str} {base_asset}")
                 print(f"Modo: {'SIMULACIÓN' if simular else 'REAL'}\n")
 
+                pnl_exit = (
+                    (exit_price_used - entry_exec_price) * qty_remaining
+                    if side == "long"
+                    else (entry_exec_price - exit_price_used) * qty_remaining
+                )
+                realized_pnl_total_usdt += pnl_exit
+                pnl_total_pct = (realized_pnl_total_usdt / entry_margin_usdt * 100) if entry_margin_usdt else 0.0
+
                 if not simular:
                     exit_side = "SELL" if side == "long" else "BUY"
                     try:
@@ -269,6 +328,11 @@ def tactica_salida_trailing_stop_wma(
                         print(f"❌ Error al enviar la orden de cierre en Futuros: {e}")
                 else:
                     print("SIMULACIÓN: No se envió orden real de cierre.")
+
+                print(
+                    f"[EVENTO] Salida final ({motivo}) | PnL_tramo={pnl_exit:.4f} USDT "
+                    f"PnL_total={realized_pnl_total_usdt:.4f} USDT ({pnl_total_pct:.2f}%)"
+                )
 
                 print("\nBot Futuros finalizado tras ejecutar la salida.\n")
                 break

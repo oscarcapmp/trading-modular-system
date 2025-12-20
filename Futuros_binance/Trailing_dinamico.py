@@ -72,10 +72,12 @@ def update_trailing(state: dict, side: str, price: float, wmas: dict, wmas_prev:
     if phase == 2:
         trailing_name = "dorada"
         trailing_val = wmas.get("dorada")
+        trailing_len = WMA_DORADA
         action = "close_all" if stop_hit(price, trailing_val, side) else "none"
         decision = {
             "phase": 2,
             "trailing_name": trailing_name,
+            "trailing_len": trailing_len,
             "trailing_value": trailing_val,
             "action": action,
             "pct": 1.0,
@@ -100,6 +102,7 @@ def update_trailing(state: dict, side: str, price: float, wmas: dict, wmas_prev:
     decision = {
         "phase": 1,
         "trailing_name": trailing_name,
+        "trailing_len": WMA_POLLITA if trailing_name == "pollita" else WMA_CELESTE if trailing_name == "celeste" else None,
         "trailing_value": trailing_val,
         "action": action,
         "pct": pct,
