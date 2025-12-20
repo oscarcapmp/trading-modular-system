@@ -73,6 +73,10 @@ def tactica_salida_trailing_stop_wma(
                 print("Aún no hay suficientes velas para WMA de STOP. Esperando...")
                 time.sleep(sleep_seconds)
                 continue
+            if not trailing_dinamico_on and wma_stop_len <= 0:
+                print("WMA_STOP inválida (<=0). Ajusta la longitud o usa trailing dinámico.")
+                time.sleep(sleep_seconds)
+                continue
 
             wma_current = wma(closes, wma_stop_len) if not trailing_dinamico_on else None
             wma_prev = wma(closes[:-1], wma_stop_len) if not trailing_dinamico_on else None
