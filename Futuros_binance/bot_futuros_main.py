@@ -47,14 +47,13 @@ def main():
     wma_entry_len = int(
         input("WMA de ENTRADA (ej: 89, o 0 para entrar a MARKET inmediato): ").strip() or "89"
     )
+    wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
+
+    emergency_input = input("¿Activar freno de emergencia ATR NATIVO en Binance? (s/n) [default: s]: ").strip().lower() or "s"
+    emergency_atr_on = emergency_input in ["s", "si", "sí", "y", "yes"]
+
     trailing_dyn_input = input("¿Activar trailing dinámico 2 fases? (s/n) [default: n]: ").strip().lower() or "n"
     trailing_dinamico_on = trailing_dyn_input in ["s", "si", "sí", "y", "yes"]
-    if trailing_dinamico_on:
-        wma_stop_len = 0
-        print("Trailing dinámico activado: se ignora 'Longitud de WMA de STOP'.")
-    else:
-        wma_stop_len = int(input("Longitud de WMA de STOP (ej: 34): ").strip() or "34")
-
     pct_fase1_input = input("Porcentaje de cierre en Fase 1 (1-99) [default: 50]: ").strip() or "50"
     try:
         pct_fase1 = float(pct_fase1_input)
@@ -64,9 +63,6 @@ def main():
             pct_fase1 = 99
     except ValueError:
         pct_fase1 = 50
-
-    emergency_input = input("¿Activar freno de emergencia ATR NATIVO en Binance? (s/n) [default: s]: ").strip().lower() or "s"
-    emergency_atr_on = emergency_input in ["s", "si", "sí", "y", "yes"]
 
     if wma_entry_len == 0:
         print("Entrada MARKET inmediata (sin táctica de cruce).")
@@ -113,10 +109,7 @@ def main():
     print(f"Modo:                {'SIMULACIÓN' if simular else 'REAL'}")
     print(f"Intervalo:           {interval}")
     print(f"WMA de ENTRADA:      {wma_entry_len}")
-    if trailing_dinamico_on:
-        print("WMA de STOP:         (IGNORADA por trailing dinámico)")
-    else:
-        print(f"WMA de STOP:         {wma_stop_len}")
+    print(f"WMA de STOP:         {wma_stop_len}")
     print(f"Freno nativo:        {'Sí' if emergency_atr_on else 'No'}")
     print(f"Trailing dinámico:   {'Sí' if trailing_dinamico_on else 'No'} (Fase1: {pct_fase1}%)")
     print(f"Sleep (segundos):    {sleep_seconds}")
