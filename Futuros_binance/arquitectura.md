@@ -31,8 +31,8 @@ bot_futuros_main.py → pide inputs → llama Operación → usa Tácticas (entr
 - Comisiones: se infiere por diferencia de balance (la lectura de trades está disponible pero no se usa).
 - Entradas y salidas actuales solo MARKET; no hay stop-limit ni órdenes limit.
 - Trailing incluye freno de emergencia local: si el precio se aleja 1.5×ATR (ATR 14) desde la WMA de stop, se cierra inmediato.
-- Desde 2025-12-09 Binance movió los stops condicionales USDT-M a Algo Orders: el freno nativo ahora se coloca vía `/fapi/v1/algoOrder` (CONDITIONAL STOP_MARKET).
-- Si el trailing cierra, cancela el STOP nativo (algo order) y valida que quede sin posición ni órdenes (incluyendo openAlgoOrders).
+- Al abrir la operación se coloca un STOP_MARKET reduceOnly en Binance (freno nativo server-side).
+- Si el trailing cierra, cancela el STOP nativo y valida que quede sin posición ni órdenes pendientes.
 
 ## 7. WMA Pack (Pollita…Camaleona)
 - WMAs configurables: Pollita (34), Celeste (55), Dorada (89), Carmesí (233), Blanca (377), Lima (610), Camaleona (987).
