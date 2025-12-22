@@ -1,9 +1,3 @@
-try:
-    from formatters import fmt_resumen_config, fmt_resumen_posicion
-except ImportError:
-    from Futuros_binance.formatters import fmt_resumen_config, fmt_resumen_posicion
-
-
 def ui_titulo(texto: str):
     print(f"\n=== {texto} ===")
 
@@ -25,13 +19,37 @@ def ui_error(msg: str):
 
 
 def ui_print_resumen_config(cfg: dict):
-    print(fmt_resumen_config(cfg))
+    ui_titulo("RESUMEN CONFIGURACIÓN FUTUROS")
+    print(f"Símbolo:             {cfg.get('symbol')}")
+    print(f"Lado estrategia:     {str(cfg.get('side')).upper()}")
+    print(f"Modo:                {'SIMULACIÓN' if cfg.get('simular') else 'REAL'}")
+    print(f"Intervalo:           {cfg.get('interval')}")
+    print(f"WMA de ENTRADA:      {cfg.get('wma_entry_len')}")
+    if cfg.get("trailing_dinamico_on"):
+        print("Salida:             Trailing dinámico 2 fases")
+        print(f"Fase 1 (%):         {cfg.get('pct_fase1')}")
+        print("WMA de STOP:        (IGNORADA por trailing dinámico)")
+    else:
+        print("Salida:             Stop clásico por WMA")
+        print(f"WMA de STOP:        {cfg.get('wma_stop_len')}")
+    print(f"Freno ATR local:    {'Sí' if cfg.get('emergency_atr_on') else 'No'} (k={cfg.get('atr_mult')})")
+    print(f"Sleep (segundos):   {cfg.get('sleep_seconds')}")
+    print(f"Esperar cierre STOP:{cfg.get('wait_on_close')}")
+    print(f"Apalancamiento max: {cfg.get('max_lev')}x")
+    print(f"Balance USDT:       {cfg.get('balance_usdt'):.4f}")
+    print(f"Poder de trading:   {cfg.get('trading_power'):.4f} USDT\n")
 
 
 def ui_print_resumen_posicion(pos: dict | None):
-    formatted = fmt_resumen_posicion(pos)
-    if formatted:
-        print(formatted)
+    if not pos:
+        return
+    ui_titulo("POSICIÓN DETECTADA")
+    print(f"Símbolo:        {pos.get('symbol')}")
+    print(f"Lado:           {str(pos.get('side')).upper()}")
+    print(f"Cantidad:       {pos.get('qty_est')}")
+    print(f"Precio entrada: {pos.get('entry_exec_price')}")
+    print(f"Leverage:       {pos.get('leverage')}x")
+    print(f"Margen aprox:   {pos.get('entry_margin_usdt'):.4f} USDT\n")
 
 
 def ui_pedir_opcion(prompt: str, opciones_validas: list[str] | None = None) -> str:
