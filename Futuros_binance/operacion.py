@@ -1,31 +1,16 @@
 import time
-
-try:
-    from infra_futuros import (
-        atr,
-        floor_to_step,
-        format_quantity,
-        get_hlc_futures,
-        get_lot_size_filter_futures,
-        get_min_notional_futures,
-        precheck_poder_trading,
-        wma,
-    )
-    from tacticas_entrada import tactica_entrada_cruce_wma
-    from tacticas_salida import tactica_salida_trailing_stop_wma
-except ImportError:
-    from Futuros_binance.infra_futuros import (
-        atr,
-        floor_to_step,
-        format_quantity,
-        get_hlc_futures,
-        get_lot_size_filter_futures,
-        get_min_notional_futures,
-        precheck_poder_trading,
-        wma,
-    )
-    from Futuros_binance.tacticas_entrada import tactica_entrada_cruce_wma
-    from Futuros_binance.tacticas_salida import tactica_salida_trailing_stop_wma
+from infra_futuros import (
+    atr,
+    floor_to_step,
+    format_quantity,
+    get_hlc_futures,
+    get_lot_size_filter_futures,
+    get_min_notional_futures,
+    precheck_poder_trading,
+    wma,
+)
+from tacticas_entrada import tactica_entrada_cruce_wma
+from tacticas_salida import tactica_salida_trailing_stop_wma
 
 
 def _calc_atr_stop_info(client, symbol: str, interval: str, entry_price: float, side: str, atr_len: int, atr_mult: float):

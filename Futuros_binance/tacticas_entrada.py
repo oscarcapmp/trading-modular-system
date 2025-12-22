@@ -1,8 +1,5 @@
 import time
-try:
-    from infra_futuros import get_closes_futures, wma
-except ImportError:
-    from Futuros_binance.infra_futuros import get_closes_futures, wma
+from infra_futuros import get_closes_futures, wma
 
 
 def tactica_entrada_cruce_wma(

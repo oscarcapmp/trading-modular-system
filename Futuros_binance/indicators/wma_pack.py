@@ -1,9 +1,5 @@
-try:
-    from infra_futuros import wma
-    from config_wma_pack import WMA_PACK_ORDER
-except ImportError:
-    from Futuros_binance.infra_futuros import wma
-    from Futuros_binance.config_wma_pack import WMA_PACK_ORDER
+from infra_futuros import wma
+from config_wma_pack import WMA_PACK_ORDER
 
 
 def calc_wma_pack(closes, custom_order=None):
