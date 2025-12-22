@@ -1,7 +1,4 @@
-try:
-    from infra_futuros import wma
-except ImportError:
-    from Futuros_binance.infra_futuros import wma
+from infra_futuros import wma
 
 WMA_POLLITA = 34
 WMA_CELESTE = 55
