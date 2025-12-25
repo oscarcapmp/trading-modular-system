@@ -1,5 +1,8 @@
 import time
-from infra_futuros import get_closes_futures, wma
+from infra_futuros import get_hlc_futures, wma
+
+
+ENTRY_BREAKOUT_BUFFER_PCT = 0.10
 
 
 def tactica_entrada_cruce_wma(
@@ -18,10 +21,11 @@ def tactica_entrada_cruce_wma(
         print(f"Condición: vela cerrada cruza A LA BAJA la WMA{wma_entry_len} en {interval}.\n")
 
     last_closed_close = None
+    pending_breakout = None
 
     while True:
         try:
-            closes = get_closes_futures(client, symbol, interval, limit=wma_entry_len + 5)
+            highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=wma_entry_len + 5)
             if len(closes) < wma_entry_len + 3:
                 print("Aún no hay suficientes velas para WMA de entrada. Esperando...")
                 time.sleep(sleep_seconds)
@@ -33,31 +37,74 @@ def tactica_entrada_cruce_wma(
             if last_closed_close is None:
                 last_closed_close = close_prev
 
-            if close_prev != last_closed_close:
-                wma_prev = wma(closes[:-1], wma_entry_len)
-                wma_prevprev = wma(closes[:-2], wma_entry_len)
+            new_closed = close_prev != last_closed_close
 
-                prev_state = "above" if close_prev > wma_prev else "below"
-                prevprev_state = "above" if close_prevprev > wma_prevprev else "below"
+            if new_closed:
+                if pending_breakout:
+                    candles_checked = pending_breakout["candles_checked"] + 1
+                    trigger = pending_breakout["trigger"]
+                    trigger_side = pending_breakout["side"]
+                    breakout = highs[-2] >= trigger if trigger_side == "long" else lows[-2] <= trigger
 
-                print(
-                    f"[ENTRADA-FUT] Vela cerrada {interval} -> "
-                    f"c_-3: {close_prevprev:.4f}, WMA_-3: {wma_prevprev:.4f}, "
-                    f"c_-2: {close_prev:.4f}, WMA_-2: {wma_prev:.4f}, "
-                    f"estados: {prevprev_state} -> {prev_state}"
-                )
+                    if breakout:
+                        print(f"\n✅ [FUTUROS] Entrada {trigger_side.upper()} ejecutada por ruptura a {trigger:.4f}.")
+                        return trigger
 
-                if side == "long" and prevprev_state == "below" and prev_state == "above":
-                    print("\n✅ [FUTUROS] Señal de ENTRADA LONG detectada (cruce alcista WMA de ENTRADA).")
-                    ticker = client.ticker_price(symbol=symbol)
-                    current_price = float(ticker["price"])
-                    return current_price
+                    if candles_checked >= 2:
+                        print("❌ [FUTUROS] Señal descartada por no romper el trigger en 2 velas.")
+                        pending_breakout = None
+                    else:
+                        pending_breakout["candles_checked"] = candles_checked
 
-                if side == "short" and prevprev_state == "above" and prev_state == "below":
-                    print("\n✅ [FUTUROS] Señal de ENTRADA SHORT detectada (cruce bajista WMA de ENTRADA).")
-                    ticker = client.ticker_price(symbol=symbol)
-                    current_price = float(ticker["price"])
-                    return current_price
+                if pending_breakout is None:
+                    wma_prev = wma(closes[:-1], wma_entry_len)
+                    wma_prevprev = wma(closes[:-2], wma_entry_len)
+
+                    prev_state = "above" if close_prev > wma_prev else "below"
+                    prevprev_state = "above" if close_prevprev > wma_prevprev else "below"
+
+                    print(
+                        f"[ENTRADA-FUT] Vela cerrada {interval} -> "
+                        f"c_-3: {close_prevprev:.4f}, WMA_-3: {wma_prevprev:.4f}, "
+                        f"c_-2: {close_prev:.4f}, WMA_-2: {wma_prev:.4f}, "
+                        f"estados: {prevprev_state} -> {prev_state}"
+                    )
+
+                    if side == "long" and prevprev_state == "below" and prev_state == "above":
+                        print("\n✅ [FUTUROS] Señal de ENTRADA LONG detectada (cruce alcista WMA de ENTRADA).")
+                        high_cruce = highs[-2]
+                        low_cruce = lows[-2]
+                        rango_cruce = high_cruce - low_cruce
+                        buffer = rango_cruce * ENTRY_BREAKOUT_BUFFER_PCT
+                        trigger = high_cruce + buffer
+                        print(
+                            f"[ENTRADA-FUT] Detectado cruce WMA. Rango cruce: {rango_cruce:.4f}, "
+                            f"buffer: {buffer:.4f}"
+                        )
+                        print(f"[ENTRADA-FUT] Trigger calculado: {trigger:.4f}")
+                        pending_breakout = {
+                            "side": side,
+                            "trigger": trigger,
+                            "candles_checked": 0,
+                        }
+
+                    if side == "short" and prevprev_state == "above" and prev_state == "below":
+                        print("\n✅ [FUTUROS] Señal de ENTRADA SHORT detectada (cruce bajista WMA de ENTRADA).")
+                        high_cruce = highs[-2]
+                        low_cruce = lows[-2]
+                        rango_cruce = high_cruce - low_cruce
+                        buffer = rango_cruce * ENTRY_BREAKOUT_BUFFER_PCT
+                        trigger = low_cruce - buffer
+                        print(
+                            f"[ENTRADA-FUT] Detectado cruce WMA. Rango cruce: {rango_cruce:.4f}, "
+                            f"buffer: {buffer:.4f}"
+                        )
+                        print(f"[ENTRADA-FUT] Trigger calculado: {trigger:.4f}")
+                        pending_breakout = {
+                            "side": side,
+                            "trigger": trigger,
+                            "candles_checked": 0,
+                        }
 
                 last_closed_close = close_prev
 
