@@ -5,6 +5,9 @@ from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
 from freno_emergencia import eval_freno_emergencia
 
 
+STOP_BREAKOUT_BUFFER_PCT = 0.10
+
+
 def tactica_salida_trailing_stop_wma(
     client,
     symbol: str,
@@ -36,6 +39,11 @@ def tactica_salida_trailing_stop_wma(
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
             close_current = closes[-1]
             close_prev = closes[-2]
+            close_prevprev = closes[-3]
+            high_current = highs[-1]
+            low_current = lows[-1]
+            high_prev = highs[-2]
+            low_prev = lows[-2]
             price_for_stop = close_prev if wait_on_close else close_current
 
             freno = eval_freno_emergencia(
@@ -87,21 +95,35 @@ def tactica_salida_trailing_stop_wma(
 
             trailing_value_current = wma(closes, trailing_len) if trailing_len else None
             trailing_value_prev = wma(closes[:-1], trailing_len) if trailing_len else None
+            trailing_value_prevprev = wma(closes[:-2], trailing_len) if trailing_len else None
 
             stop_state, stop_decision = eval_stop_clasico_by_wma(
                 side=side,
                 close_current=close_current,
                 close_prev=close_prev,
+                close_prevprev=close_prevprev,
+                high_current=high_current,
+                low_current=low_current,
+                high_prev=high_prev,
+                low_prev=low_prev,
                 trailing_value_current=trailing_value_current,
                 trailing_value_prev=trailing_value_prev,
+                trailing_value_prevprev=trailing_value_prevprev,
                 wait_on_close=wait_on_close,
                 state=stop_state,
+                buffer_ratio=STOP_BREAKOUT_BUFFER_PCT,
             )
 
             trailing_val_txt = f"{trailing_value_current:.4f}" if trailing_value_current is not None else "N/D"
             print(
                 f"[STOP] trailing={trailing_name}({trailing_len})@{trailing_val_txt} action={stop_decision.get('action')}"
             )
+
+            if stop_decision.get("pending_trigger") is not None:
+                print(
+                    f"[STOP] Trigger preparado: {stop_decision.get('pending_trigger'):.4f} "
+                    f"(buffer={stop_decision.get('pending_buffer'):.4f})"
+                )
 
             if stop_decision.get("action") == "close_all":
                 exit_price = stop_decision.get("exit_price", price_for_stop)
