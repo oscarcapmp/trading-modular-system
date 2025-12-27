@@ -5,7 +5,7 @@ from config_wma_pack import WMA_FIB_LENGTHS, wma_name_from_len
 from infra_futuros import format_quantity, get_hlc_futures, sonar_alarma, wma
 from Trailing_dinamico import get_trailing_reference
 from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
-from freno_emergencia import eval_freno_emergencia
+from freno_emergencia import compute_freno_emergencia_stop_level
 
 
 STOP_BREAKOUT_BUFFER_PCT = 0.10
@@ -36,6 +36,19 @@ def tactica_salida_trailing_stop_wma(
     qty_close_str = qty_str or format_quantity(abs(qty_est))
     stop_mode_norm = (stop_rule_mode or "breakout").lower()
     ref_mode_norm = (trailing_ref_mode or "fixed").lower()
+    active_trailing_len = wma_stop_len if ref_mode_norm != "dynamic" else WMA_FIB_LENGTHS[0]
+    active_trailing_name = wma_name_from_len(active_trailing_len) if active_trailing_len else None
+    freno_info = compute_freno_emergencia_stop_level(
+        client=client,
+        symbol=symbol,
+        interval=interval,
+        side=side,
+        atr_len=ATR_LEN_DEFAULT,
+        atr_mult=ATR_MULT_DEFAULT,
+    )
+    freno_stop_level = freno_info.get("stop_level")
+    freno_atr = freno_info.get("atr")
+    freno_wma34 = freno_info.get("wma34")
 
     while True:
         try:
@@ -51,22 +64,22 @@ def tactica_salida_trailing_stop_wma(
             low_prev = lows[-2]
             price_for_stop = close_prev if wait_on_close else close_current
 
-            freno = eval_freno_emergencia(
-                client=client,
-                symbol=symbol,
-                interval=interval,
-                side=side,
-                price_for_stop=price_for_stop,
-                atr_len=ATR_LEN_DEFAULT,
-                atr_mult=ATR_MULT_DEFAULT,
+            freno_triggered = False
+            if freno_stop_level is not None:
+                freno_triggered = price_for_stop <= freno_stop_level if side == "long" else price_for_stop >= freno_stop_level
+
+            freno_level_txt = f"{freno_stop_level:.4f}" if freno_stop_level is not None else "N/D"
+            atr_txt = f"{freno_atr:.4f}" if freno_atr is not None else "N/D"
+            wma34_txt = f"{freno_wma34:.4f}" if freno_wma34 is not None else "N/D"
+            print(
+                f"[FRENO] nivel_fijo={freno_level_txt} precio={price_for_stop:.4f} atr={atr_txt} wma34={wma34_txt}"
             )
-            if freno.get("action") == "close_all":
+
+            if freno_triggered:
                 sonar_alarma()
-                stop_level = freno.get("stop_level")
-                stop_txt = f"{stop_level:.4f}" if stop_level is not None else "N/D"
                 print(
-                    f"[FRENO] Cierre total por emergencia ATR+WMA34 @ {stop_txt} "
-                    f"(atr={freno.get('atr')}, wma34={freno.get('wma34')})"
+                    f"[FRENO] Cierre total por emergencia ATR+WMA34 @ {freno_level_txt} "
+                    f"(atr={atr_txt}, wma34={wma34_txt})"
                 )
                 if simular:
                     print(f"[SIMULACIÓN] Cierre total qty={qty_close_str}")
@@ -88,14 +101,19 @@ def tactica_salida_trailing_stop_wma(
             trailing_name = None
             if ref_mode_norm == "dynamic":
                 trailing_ref = get_trailing_reference(side, closes)
-                trailing_len = trailing_ref.get("trailing_len")
-                trailing_name = trailing_ref.get("trailing_name")
+                new_trailing_len = trailing_ref.get("trailing_len")
+                if new_trailing_len is not None:
+                    if new_trailing_len != active_trailing_len:
+                        active_trailing_len = new_trailing_len
+                        active_trailing_name = wma_name_from_len(active_trailing_len)
+                        reason = trailing_ref.get("reason", "cruce_detectado")
+                        print(f"[TRAILING] update -> {active_trailing_name}({active_trailing_len}) reason={reason}")
             else:
-                trailing_len = wma_stop_len if wma_stop_len and wma_stop_len > 0 else None
-                trailing_name = wma_name_from_len(trailing_len) if trailing_len else None
+                active_trailing_len = wma_stop_len if wma_stop_len and wma_stop_len > 0 else None
+                active_trailing_name = wma_name_from_len(active_trailing_len) if active_trailing_len else None
 
-            if trailing_len and not trailing_name:
-                trailing_name = wma_name_from_len(trailing_len)
+            trailing_len = active_trailing_len
+            trailing_name = active_trailing_name or (wma_name_from_len(trailing_len) if trailing_len else None)
 
             trailing_value_current = wma(closes, trailing_len) if trailing_len else None
             trailing_value_prev = wma(closes[:-1], trailing_len) if trailing_len else None
