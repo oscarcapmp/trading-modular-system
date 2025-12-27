@@ -14,6 +14,7 @@ from operacion import (
     run_long_strategy,
     run_short_strategy,
 )
+from validaciones import validar_orden_wmas
 from tacticas_salida import tactica_salida_trailing_stop_wma
 
 
@@ -76,6 +77,7 @@ def flujo_nueva_operacion(client):
 
     simular = _leer_bool("¿Simular sin enviar órdenes reales? (s/n) [s]: ", default=True)
     interval = input("Marco de tiempo (ej: 1m, 5m, 15m, 1h): ").strip() or "1m"
+    validar_orden_wmas(client, symbol, interval, side_input)
     sleep_seconds = _leer_int("Segundos entre chequeos (ej: 15): ", default=15)
 
     wma_entry_len = _leer_int(
