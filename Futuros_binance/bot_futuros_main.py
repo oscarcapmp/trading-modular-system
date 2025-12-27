@@ -89,6 +89,7 @@ def flujo_nueva_operacion(client):
     print("2) Trailing dinámico (escalera Fibonacci)")
     salida_opcion = input("Elige una opción (1/2): ").strip()
     trailing_ref_mode = "dynamic" if salida_opcion == "2" else "fixed"
+    emergency_brake_enabled = trailing_ref_mode == "dynamic"
 
     if trailing_ref_mode == "fixed":
         wma_stop_len = _leer_int("Longitud de WMA de STOP (ej: 144): ", default=144)
@@ -129,7 +130,8 @@ def flujo_nueva_operacion(client):
         print("Referencia STOP:     WMA fija")
         print(f"WMA de STOP:        {wma_stop_len} ({nombre_wma_stop})")
     print(f"Regla STOP:          {'Cruce inmediato (clásico)' if stop_rule_mode == 'cross' else 'Espejo entrada (buffer+breakout 2 velas)'}")
-    print("Freno emergencia:    SIEMPRE ACTIVO (ATR+WMA34, cierre MARKET)")
+    freno_txt = "SIEMPRE ACTIVO (ATR+WMA34, cierre MARKET)" if emergency_brake_enabled else "DESACTIVADO (WMA fija)"
+    print(f"Freno emergencia:    {freno_txt}")
     print(f"Sleep (segundos):   {sleep_seconds}")
     print(f"Esperar cierre STOP:{wait_on_close}")
     print(f"Apalancamiento max: {max_lev}x")
@@ -152,6 +154,7 @@ def flujo_nueva_operacion(client):
             balance_usdt=balance_usdt,
             trading_power=trading_power,
             max_lev=max_lev,
+            emergency_brake_enabled=emergency_brake_enabled,
         )
     else:
         run_short_strategy(
@@ -169,6 +172,7 @@ def flujo_nueva_operacion(client):
             balance_usdt=balance_usdt,
             trading_power=trading_power,
             max_lev=max_lev,
+            emergency_brake_enabled=emergency_brake_enabled,
         )
 
 
@@ -229,6 +233,7 @@ def flujo_posicion_abierta(client):
     print("2) Trailing dinámico (escalera Fibonacci)")
     salida_opcion = input("Elige una opción (1/2): ").strip()
     trailing_ref_mode = "dynamic" if salida_opcion == "2" else "fixed"
+    emergency_brake_enabled = trailing_ref_mode == "dynamic"
 
     if trailing_ref_mode == "fixed":
         wma_stop_len = _leer_int("Longitud de WMA de STOP (ej: 144): ", default=144)
@@ -259,7 +264,8 @@ def flujo_posicion_abierta(client):
         print("Referencia STOP:     WMA fija")
         print(f"WMA de STOP:        {wma_stop_len} ({nombre_wma_stop})")
     print(f"Regla STOP:          {'Cruce inmediato (clásico)' if stop_rule_mode == 'cross' else 'Espejo entrada (buffer+breakout 2 velas)'}")
-    print("Freno emergencia:    SIEMPRE ACTIVO (ATR+WMA34, cierre MARKET)")
+    freno_txt = "SIEMPRE ACTIVO (ATR+WMA34, cierre MARKET)" if emergency_brake_enabled else "DESACTIVADO (WMA fija)"
+    print(f"Freno emergencia:    {freno_txt}")
     print(f"Sleep (segundos):   {sleep_seconds}")
     print(f"Esperar cierre STOP:{wait_on_close}\n")
 
@@ -281,6 +287,7 @@ def flujo_posicion_abierta(client):
         side=pos_info["side"],
         entry_order_id=None,
         balance_inicial_futuros=None,
+        emergency_brake_enabled=emergency_brake_enabled,
     )
 
 

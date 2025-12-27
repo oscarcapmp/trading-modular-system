@@ -138,6 +138,7 @@ def comprar_long_por_cruce_wma(
     trading_power: float,
     max_lev: int,
     atr_mult: float = 1.5,
+    emergency_brake_enabled: bool = True,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
         raw = input(prompt).strip()
@@ -332,6 +333,7 @@ def comprar_long_por_cruce_wma(
         side="long",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        emergency_brake_enabled=emergency_brake_enabled,
     )
 
 
@@ -351,6 +353,7 @@ def comprar_short_por_cruce_wma(
     trading_power: float,
     max_lev: int,
     atr_mult: float = 1.5,
+    emergency_brake_enabled: bool = True,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
         raw = input(prompt).strip()
@@ -545,6 +548,7 @@ def comprar_short_por_cruce_wma(
         side="short",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
+        emergency_brake_enabled=emergency_brake_enabled,
     )
 
 
@@ -567,6 +571,7 @@ def run_long_strategy(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    emergency_brake_enabled: bool = True,
 ):
     return comprar_long_por_cruce_wma(
         client=client,
@@ -583,6 +588,7 @@ def run_long_strategy(
         balance_usdt=balance_usdt,
         trading_power=trading_power,
         max_lev=max_lev,
+        emergency_brake_enabled=emergency_brake_enabled,
     )
 
 
@@ -601,6 +607,7 @@ def run_short_strategy(
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
+    emergency_brake_enabled: bool = True,
 ):
     return comprar_short_por_cruce_wma(
         client=client,
@@ -617,4 +624,5 @@ def run_short_strategy(
         balance_usdt=balance_usdt,
         trading_power=trading_power,
         max_lev=max_lev,
+        emergency_brake_enabled=emergency_brake_enabled,
     )

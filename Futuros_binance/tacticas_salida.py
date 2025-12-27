@@ -31,6 +31,7 @@ def tactica_salida_trailing_stop_wma(
     side: str,
     entry_order_id: int | None = None,
     balance_inicial_futuros: float | None = None,
+    emergency_brake_enabled: bool = True,
 ):
     stop_state = init_stop_state()
     qty_close_str = qty_str or format_quantity(abs(qty_est))
@@ -38,17 +39,21 @@ def tactica_salida_trailing_stop_wma(
     ref_mode_norm = (trailing_ref_mode or "fixed").lower()
     active_trailing_len = wma_stop_len if ref_mode_norm != "dynamic" else None
     active_trailing_name = wma_name_from_len(active_trailing_len) if active_trailing_len else None
-    freno_info = compute_freno_emergencia_stop_level(
-        client=client,
-        symbol=symbol,
-        interval=interval,
-        side=side,
-        atr_len=ATR_LEN_DEFAULT,
-        atr_mult=ATR_MULT_DEFAULT,
-    )
-    freno_stop_level = freno_info.get("stop_level")
-    freno_atr = freno_info.get("atr")
-    freno_wma34 = freno_info.get("wma34")
+    freno_stop_level = None
+    freno_atr = None
+    freno_wma34 = None
+    if emergency_brake_enabled:
+        freno_info = compute_freno_emergencia_stop_level(
+            client=client,
+            symbol=symbol,
+            interval=interval,
+            side=side,
+            atr_len=ATR_LEN_DEFAULT,
+            atr_mult=ATR_MULT_DEFAULT,
+        )
+        freno_stop_level = freno_info.get("stop_level")
+        freno_atr = freno_info.get("atr")
+        freno_wma34 = freno_info.get("wma34")
 
     while True:
         try:
@@ -65,15 +70,16 @@ def tactica_salida_trailing_stop_wma(
             price_for_stop = close_prev if wait_on_close else close_current
 
             freno_triggered = False
-            if freno_stop_level is not None:
+            if emergency_brake_enabled and freno_stop_level is not None:
                 freno_triggered = price_for_stop <= freno_stop_level if side == "long" else price_for_stop >= freno_stop_level
 
-            freno_level_txt = f"{freno_stop_level:.4f}" if freno_stop_level is not None else "N/D"
-            atr_txt = f"{freno_atr:.4f}" if freno_atr is not None else "N/D"
-            wma34_txt = f"{freno_wma34:.4f}" if freno_wma34 is not None else "N/D"
-            print(
-                f"[FRENO] nivel_fijo={freno_level_txt} precio={price_for_stop:.4f} atr={atr_txt} wma34={wma34_txt}"
-            )
+            if emergency_brake_enabled:
+                freno_level_txt = f"{freno_stop_level:.4f}" if freno_stop_level is not None else "N/D"
+                atr_txt = f"{freno_atr:.4f}" if freno_atr is not None else "N/D"
+                wma34_txt = f"{freno_wma34:.4f}" if freno_wma34 is not None else "N/D"
+                print(
+                    f"[FRENO] nivel_fijo={freno_level_txt} precio={price_for_stop:.4f} atr={atr_txt} wma34={wma34_txt}"
+                )
 
             if freno_triggered:
                 sonar_alarma()
