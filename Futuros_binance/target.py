@@ -1,12 +1,13 @@
 from infra_futuros import format_quantity
 
 
-def place_take_profit_market_50(client, symbol: str, side: str, target_price: float, simular: bool) -> dict:
+def close_market_reduceonly_pct(client, symbol: str, side: str, pct: float, simular: bool) -> dict:
     """
-    Envía (o simula) un TAKE_PROFIT_MARKET para cerrar el 50% de la posición.
+    Cierra a MARKET (reduceOnly) un porcentaje de la posición actual.
+    side: long/short
+    pct: 0.50 -> 50%
     """
-    # Import interno para evitar ciclos
-    from operacion import get_current_position
+    from operacion import get_current_position  # import local para evitar ciclos
 
     pos = get_current_position(client, symbol)
     if not pos:
@@ -18,45 +19,31 @@ def place_take_profit_market_50(client, symbol: str, side: str, target_price: fl
         return {"error": "invalid_position"}
 
     qty_total = abs(amt)
-    qty_50 = qty_total * 0.5
-    qty_50_str = format_quantity(qty_50)
+    qty_close = qty_total * pct
+    qty_close_str = format_quantity(qty_close)
 
     if simular:
         return {
             "simulated": True,
-            "qty": qty_50,
-            "qty_str": qty_50_str,
-            "target_price": target_price,
+            "qty": qty_close,
+            "qty_str": qty_close_str,
+            "pct": pct,
         }
 
-    side_order = "SELL" if side == "long" else "BUY"
+    side_norm = (side or "").lower()
+    order_side = "SELL" if side_norm == "long" else "BUY"
     order = client.new_order(
         symbol=symbol,
-        side=side_order,
-        type="TAKE_PROFIT_MARKET",
-        stopPrice=target_price,
+        side=order_side,
+        type="MARKET",
         reduceOnly=True,
-        quantity=qty_50_str,
+        quantity=qty_close_str,
     )
 
     return {
         "orderId": order.get("orderId"),
-        "target_price": target_price,
-        "qty_50": qty_50,
-        "qty_50_str": qty_50_str,
-        "side_order": side_order,
+        "qty_close": qty_close,
+        "qty_close_str": qty_close_str,
+        "pct": pct,
+        "side_order": order_side,
     }
-
-
-def is_order_filled(client, symbol: str, order_id: int) -> tuple[bool, dict]:
-    """
-    Consulta el estado de la orden. Retorna (filled, order_data).
-    """
-    try:
-        order = client.get_order(symbol=symbol, orderId=order_id)
-    except Exception:
-        order = client.query_order(symbol=symbol, orderId=order_id)
-
-    status = order.get("status")
-    filled = status in ("FILLED",)
-    return filled, order
