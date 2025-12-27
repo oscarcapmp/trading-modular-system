@@ -68,6 +68,10 @@ def menu_principal() -> str:
 
 def flujo_nueva_operacion(client):
     symbol = input("Símbolo Futuros (ej: BTCUSDT): ").strip().upper() or "BTCUSDT"
+    side_input = input("¿Estrategia LONG o SHORT? (long/short): ").strip().lower() or "long"
+    if side_input not in ["long", "short"]:
+        print("Opción de lado no válida. Usa 'long' o 'short'. Saliendo.")
+        return
     base_asset = symbol.replace("USDT", "")
 
     simular = _leer_bool("¿Simular sin enviar órdenes reales? (s/n) [s]: ", default=True)
@@ -106,11 +110,6 @@ def flujo_nueva_operacion(client):
     balance_usdt = get_futures_usdt_balance(client)
     max_lev = get_max_leverage_symbol(client, symbol)
     trading_power = balance_usdt * max_lev
-
-    side_input = input("¿Estrategia LONG o SHORT? (long/short): ").strip().lower() or "long"
-    if side_input not in ["long", "short"]:
-        print("Opción de lado no válida. Usa 'long' o 'short'. Saliendo.")
-        return
 
     report_wma_pack_alignment(client, symbol, interval, side_input)
 
