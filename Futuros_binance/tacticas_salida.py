@@ -6,6 +6,7 @@ from infra_futuros import format_quantity, get_hlc_futures, sonar_alarma, wma
 from Trailing_dinamico import get_trailing_reference
 from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
 from freno_emergencia import compute_freno_emergencia_stop_level
+from target import is_order_filled
 
 
 STOP_BREAKOUT_BUFFER_PCT = 0.17
@@ -32,6 +33,7 @@ def tactica_salida_trailing_stop_wma(
     entry_order_id: int | None = None,
     balance_inicial_futuros: float | None = None,
     emergency_brake_enabled: bool = True,
+    storytelling_ctx: dict | None = None,
 ):
     stop_state = init_stop_state()
     qty_close_str = qty_str or format_quantity(abs(qty_est))
@@ -57,6 +59,25 @@ def tactica_salida_trailing_stop_wma(
 
     while True:
         try:
+            if storytelling_ctx and not storytelling_ctx.get("printed_fill") and not simular:
+                order_id = storytelling_ctx.get("order_id")
+                if order_id:
+                    filled, order_data = is_order_filled(client, symbol, order_id)
+                    if filled:
+                        avg_price_raw = order_data.get("avgPrice") or order_data.get("price")
+                        try:
+                            avg_price_val = float(avg_price_raw)
+                            avg_price_txt = f"{avg_price_val:.4f}" if avg_price_val > 0 else "N/D"
+                        except Exception:
+                            avg_price_txt = "N/D"
+                        target_txt = (
+                            f"{storytelling_ctx.get('target_price'):.4f}"
+                            if storytelling_ctx.get("target_price") is not None
+                            else "N/D"
+                        )
+                        print(f"✅ [TRAGUITO] Target ejecutado 50% @ {avg_price_txt} (target={target_txt})")
+                        storytelling_ctx["printed_fill"] = True
+
             max_wma_len = max(([wma_stop_len] if wma_stop_len else []) + WMA_FIB_LENGTHS)
             limit_needed = max(max_wma_len + 5, 120)
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)

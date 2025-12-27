@@ -14,6 +14,7 @@ from infra_futuros import (
 )
 from tacticas_entrada import tactica_entrada_cruce_wma
 from tacticas_salida import tactica_salida_trailing_stop_wma
+from tacticas_storytelling import storytelling_traguito_pa_las_almas
 
 
 def _calc_atr_stop_info(client, symbol: str, interval: str, entry_price: float, side: str, atr_len: int, atr_mult: float):
@@ -214,6 +215,8 @@ def comprar_long_por_cruce_wma(
 
     raw_qty_est = poder_usar / entry_price_ref
     entry_order_id = None
+    storytelling_ctx = None
+    storytelling_ctx = None
 
     try:
         min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
@@ -309,6 +312,16 @@ def comprar_long_por_cruce_wma(
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
+            if trailing_ref_mode == "dynamic":
+                storytelling_ctx = storytelling_traguito_pa_las_almas(
+                    client=client,
+                    symbol=symbol,
+                    side="long",
+                    entry_exec_price=entry_exec_price,
+                    interval=interval,
+                    simular=simular,
+                )
+
         except Exception as e:
             print(f"❌ Error enviando orden de apertura LONG en Futuros: {e}")
             return
@@ -334,6 +347,7 @@ def comprar_long_por_cruce_wma(
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
         emergency_brake_enabled=emergency_brake_enabled,
+        storytelling_ctx=storytelling_ctx,
     )
 
 
@@ -524,6 +538,16 @@ def comprar_short_por_cruce_wma(
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
+            if trailing_ref_mode == "dynamic":
+                storytelling_ctx = storytelling_traguito_pa_las_almas(
+                    client=client,
+                    symbol=symbol,
+                    side="short",
+                    entry_exec_price=entry_exec_price,
+                    interval=interval,
+                    simular=simular,
+                )
+
         except Exception as e:
             print(f"❌ Error enviando orden de apertura SHORT en Futuros: {e}")
             return
@@ -549,6 +573,7 @@ def comprar_short_por_cruce_wma(
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
         emergency_brake_enabled=emergency_brake_enabled,
+        storytelling_ctx=storytelling_ctx,
     )
 
 
