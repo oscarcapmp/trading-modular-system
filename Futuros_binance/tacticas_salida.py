@@ -36,7 +36,7 @@ def tactica_salida_trailing_stop_wma(
     qty_close_str = qty_str or format_quantity(abs(qty_est))
     stop_mode_norm = (stop_rule_mode or "breakout").lower()
     ref_mode_norm = (trailing_ref_mode or "fixed").lower()
-    active_trailing_len = wma_stop_len if ref_mode_norm != "dynamic" else WMA_FIB_LENGTHS[0]
+    active_trailing_len = wma_stop_len if ref_mode_norm != "dynamic" else None
     active_trailing_name = wma_name_from_len(active_trailing_len) if active_trailing_len else None
     freno_info = compute_freno_emergencia_stop_level(
         client=client,
@@ -138,9 +138,10 @@ def tactica_salida_trailing_stop_wma(
             )
 
             trailing_name_txt = trailing_name or "-"
+            trailing_len_txt = trailing_len if trailing_len is not None else "-"
             trailing_val_txt = f"{trailing_value_current:.4f}" if trailing_value_current is not None else "N/D"
             print(
-                f"[STOP] trailing={trailing_name_txt}({trailing_len})@{trailing_val_txt} action={stop_decision.get('action')}"
+                f"[STOP] trailing={trailing_name_txt}({trailing_len_txt})@{trailing_val_txt} action={stop_decision.get('action')}"
             )
 
             if stop_decision.get("pending_trigger") is not None:

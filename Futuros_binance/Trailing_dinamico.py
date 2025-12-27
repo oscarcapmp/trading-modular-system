@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from config_wma_pack import WMA_FIB_LENGTHS, wma_name_from_len
+from config_wma_pack import wma_name_from_len
 from infra_futuros import wma
+
+# Ladder restringida para trailing dinámico
+TRAILING_WMA_LADDER = [144, 233, 377, 610, 987]
 
 
 def _has_cross(short_prev: float, long_prev: float, short_cur: float, long_cur: float, is_long: bool) -> bool:
@@ -23,32 +26,34 @@ def get_trailing_reference(side: str, closes: list[float]) -> dict:
     if len(closes) < 3:
         return {"trailing_name": None, "trailing_len": None, "trailing_value": None}
 
-    current_wmas = {length: wma(closes, length) for length in WMA_FIB_LENGTHS}
+    current_wmas = {length: wma(closes, length) for length in TRAILING_WMA_LADDER}
     prev_closes = closes[:-1]
-    prev_wmas = {length: wma(prev_closes, length) for length in WMA_FIB_LENGTHS}
+    prev_wmas = {length: wma(prev_closes, length) for length in TRAILING_WMA_LADDER}
 
-    candidates: list[tuple[int, int | None, float | None]] = []
+    candidates: list[tuple[int, int | None, float | None, str]] = []
 
-    for idx in range(len(WMA_FIB_LENGTHS) - 1):
-        a_len = WMA_FIB_LENGTHS[idx]
-        b_len = WMA_FIB_LENGTHS[idx + 1]
+    for idx in range(len(TRAILING_WMA_LADDER) - 1):
+        a_len = TRAILING_WMA_LADDER[idx]
+        b_len = TRAILING_WMA_LADDER[idx + 1]
 
         if _has_cross(prev_wmas[a_len], prev_wmas[b_len], current_wmas[a_len], current_wmas[b_len], is_long):
             trailing_idx = idx - 1
-            trailing_len = WMA_FIB_LENGTHS[trailing_idx] if trailing_idx >= 0 else None
+            trailing_len = TRAILING_WMA_LADDER[trailing_idx] if trailing_idx >= 0 else None
             trailing_value = wma(closes, trailing_len) if trailing_len else None
-            candidates.append((b_len, trailing_len, trailing_value))
+            reason = f"cruce_{a_len}_{b_len}"
+            candidates.append((b_len, trailing_len, trailing_value, reason))
 
     if not candidates:
         return {"trailing_name": None, "trailing_len": None, "trailing_value": None}
 
     # Mayor escala = B más grande
     candidates.sort(key=lambda x: x[0], reverse=True)
-    _, trailing_len, trailing_value = candidates[0]
+    _, trailing_len, trailing_value, reason = candidates[0]
     trailing_name = wma_name_from_len(trailing_len) if trailing_len else None
 
     return {
         "trailing_name": trailing_name,
         "trailing_len": trailing_len,
         "trailing_value": trailing_value,
+        "reason": reason,
     }
