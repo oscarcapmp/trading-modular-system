@@ -22,6 +22,7 @@ def tactica_entrada_cruce_wma(
 
     last_closed_close = None
     pending_breakout = None
+    heartbeat_counter = 0
 
     while True:
         try:
@@ -48,14 +49,22 @@ def tactica_entrada_cruce_wma(
                 current_state = "above" if close_current > wma_current else "below"
 
                 if current_state == pending_breakout["reset_state"]:
+                    print("[ENTRADA-FUT] Breakout signal reset (structure invalidated). Looking for new entry.")
                     pending_breakout = None
+                    heartbeat_counter = 0
                 else:
                     trigger = pending_breakout["trigger"]
                     trigger_side = pending_breakout["side"]
                     breakout = high_current >= trigger if trigger_side == "long" else low_current <= trigger
                     if breakout:
                         print(f"\n✅ [FUTUROS] Entrada {trigger_side.upper()} ejecutada por ruptura a {trigger:.4f}.")
+                        heartbeat_counter = 0
                         return trigger
+                    heartbeat_counter += 1
+                    if heartbeat_counter % 4 == 0:
+                        print(
+                            f"[ENTRADA-FUT] Waiting for breakout @ {trigger:.4f} | price_now={close_current:.4f}"
+                        )
 
             if new_closed:
                 if pending_breakout is None:
@@ -84,11 +93,13 @@ def tactica_entrada_cruce_wma(
                             f"buffer: {buffer:.4f}"
                         )
                         print(f"[ENTRADA-FUT] Trigger calculado: {trigger:.4f}")
+                        print(f"[ENTRADA-FUT] Waiting for breakout @ {trigger:.4f}")
                         pending_breakout = {
                             "side": side,
                             "trigger": trigger,
                             "reset_state": prevprev_state,
                         }
+                        heartbeat_counter = 0
 
                     if side == "short" and prevprev_state == "above" and prev_state == "below":
                         print("\n✅ [FUTUROS] Señal de ENTRADA SHORT detectada (cruce bajista WMA de ENTRADA).")
@@ -102,11 +113,13 @@ def tactica_entrada_cruce_wma(
                             f"buffer: {buffer:.4f}"
                         )
                         print(f"[ENTRADA-FUT] Trigger calculado: {trigger:.4f}")
+                        print(f"[ENTRADA-FUT] Waiting for breakout @ {trigger:.4f}")
                         pending_breakout = {
                             "side": side,
                             "trigger": trigger,
                             "reset_state": prevprev_state,
                         }
+                        heartbeat_counter = 0
 
                 last_closed_close = close_prev
 
