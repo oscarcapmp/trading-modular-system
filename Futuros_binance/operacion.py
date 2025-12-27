@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import time
+from config_wma_pack import wma_name_from_len
 from infra_futuros import (
     atr,
     floor_to_step,
@@ -29,11 +32,11 @@ def _calc_atr_stop_info(client, symbol: str, interval: str, entry_price: float, 
         if dist_34 >= dist_55:
             base_price = wma_34
             base_len = 34
-            base_name = "Pollita"
         else:
             base_price = wma_55
             base_len = 55
-            base_name = "Celeste"
+
+        base_name = wma_name_from_len(base_len)
 
         atr_val = atr(highs, lows, closes, atr_len)
         if atr_val is None:
@@ -127,14 +130,13 @@ def comprar_long_por_cruce_wma(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
+    wma_stop_len: int | None,
     wait_on_close: bool,
-    emergency_atr_on: bool,
+    trailing_ref_mode: str,
+    stop_rule_mode: str,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool,
-    pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
@@ -318,9 +320,10 @@ def comprar_long_por_cruce_wma(
         base_asset=base_asset,
         interval=interval,
         sleep_seconds=sleep_seconds,
+        trailing_ref_mode=trailing_ref_mode,
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
-        emergency_atr_on=emergency_atr_on,
+        stop_rule_mode=stop_rule_mode,
         qty_est=qty_est,
         qty_str=qty_str,
         entry_exec_price=entry_exec_price,
@@ -329,8 +332,6 @@ def comprar_long_por_cruce_wma(
         side="long",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
     )
 
 
@@ -342,14 +343,13 @@ def comprar_short_por_cruce_wma(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
+    wma_stop_len: int | None,
     wait_on_close: bool,
-    emergency_atr_on: bool,
+    trailing_ref_mode: str,
+    stop_rule_mode: str,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool,
-    pct_fase1: float = 50.0,
     atr_mult: float = 1.5,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
@@ -533,9 +533,10 @@ def comprar_short_por_cruce_wma(
         base_asset=base_asset,
         interval=interval,
         sleep_seconds=sleep_seconds,
+        trailing_ref_mode=trailing_ref_mode,
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
-        emergency_atr_on=emergency_atr_on,
+        stop_rule_mode=stop_rule_mode,
         qty_est=qty_est,
         qty_str=qty_str,
         entry_exec_price=entry_exec_price,
@@ -544,8 +545,6 @@ def comprar_short_por_cruce_wma(
         side="short",
         entry_order_id=entry_order_id,
         balance_inicial_futuros=balance_usdt,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
     )
 
 
@@ -561,15 +560,13 @@ def run_long_strategy(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
+    wma_stop_len: int | None,
+    trailing_ref_mode: str,
+    stop_rule_mode: str,
     wait_on_close: bool,
-    emergency_atr_on: bool,
-    atr_mult: float,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool,
-    pct_fase1: float,
 ):
     return comprar_long_por_cruce_wma(
         client=client,
@@ -581,13 +578,11 @@ def run_long_strategy(
         wma_entry_len=wma_entry_len,
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
-        emergency_atr_on=emergency_atr_on,
+        trailing_ref_mode=trailing_ref_mode,
+        stop_rule_mode=stop_rule_mode,
         balance_usdt=balance_usdt,
         trading_power=trading_power,
         max_lev=max_lev,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
-        atr_mult=atr_mult,
     )
 
 
@@ -599,15 +594,13 @@ def run_short_strategy(
     interval: str,
     sleep_seconds: int,
     wma_entry_len: int,
-    wma_stop_len: int,
+    wma_stop_len: int | None,
+    trailing_ref_mode: str,
+    stop_rule_mode: str,
     wait_on_close: bool,
-    emergency_atr_on: bool,
-    atr_mult: float,
     balance_usdt: float,
     trading_power: float,
     max_lev: int,
-    trailing_dinamico_on: bool,
-    pct_fase1: float,
 ):
     return comprar_short_por_cruce_wma(
         client=client,
@@ -619,11 +612,9 @@ def run_short_strategy(
         wma_entry_len=wma_entry_len,
         wma_stop_len=wma_stop_len,
         wait_on_close=wait_on_close,
-        emergency_atr_on=emergency_atr_on,
+        trailing_ref_mode=trailing_ref_mode,
+        stop_rule_mode=stop_rule_mode,
         balance_usdt=balance_usdt,
         trading_power=trading_power,
         max_lev=max_lev,
-        trailing_dinamico_on=trailing_dinamico_on,
-        pct_fase1=pct_fase1,
-        atr_mult=atr_mult,
     )

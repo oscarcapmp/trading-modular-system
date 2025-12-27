@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import time
+from config_wma_pack import WMA_FIB_LENGTHS, wma_name_from_len
 from infra_futuros import format_quantity, get_hlc_futures, sonar_alarma, wma
 from Trailing_dinamico import get_trailing_reference
 from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
@@ -6,6 +9,8 @@ from freno_emergencia import eval_freno_emergencia
 
 
 STOP_BREAKOUT_BUFFER_PCT = 0.10
+ATR_LEN_DEFAULT = 14
+ATR_MULT_DEFAULT = 1.5
 
 
 def tactica_salida_trailing_stop_wma(
@@ -14,28 +19,28 @@ def tactica_salida_trailing_stop_wma(
     base_asset: str,
     interval: str,
     sleep_seconds: int,
-    wma_stop_len: int,
+    trailing_ref_mode: str,
+    wma_stop_len: int | None,
     wait_on_close: bool,
+    stop_rule_mode: str,
     qty_est: float,
     qty_str: str,
     entry_exec_price: float,
     entry_margin_usdt: float,
     simular: bool,
     side: str,
-    trailing_dinamico_on: bool,
     entry_order_id: int | None = None,
     balance_inicial_futuros: float | None = None,
-    emergency_atr_on: bool = True,
-    atr_len: int = 14,
-    atr_mult: float = 1.5,
-    pct_fase1: float = 50.0,
 ):
     stop_state = init_stop_state()
     qty_close_str = qty_str or format_quantity(abs(qty_est))
+    stop_mode_norm = (stop_rule_mode or "breakout").lower()
+    ref_mode_norm = (trailing_ref_mode or "fixed").lower()
 
     while True:
         try:
-            limit_needed = max((wma_stop_len + 5) if wma_stop_len else 0, 120)
+            max_wma_len = max(([wma_stop_len] if wma_stop_len else []) + WMA_FIB_LENGTHS)
+            limit_needed = max(max_wma_len + 5, 120)
             highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=limit_needed)
             close_current = closes[-1]
             close_prev = closes[-2]
@@ -52,8 +57,8 @@ def tactica_salida_trailing_stop_wma(
                 interval=interval,
                 side=side,
                 price_for_stop=price_for_stop,
-                atr_len=atr_len,
-                atr_mult=atr_mult,
+                atr_len=ATR_LEN_DEFAULT,
+                atr_mult=ATR_MULT_DEFAULT,
             )
             if freno.get("action") == "close_all":
                 sonar_alarma()
@@ -81,17 +86,16 @@ def tactica_salida_trailing_stop_wma(
 
             trailing_len = None
             trailing_name = None
-            trailing_value = None
-
-            if trailing_dinamico_on:
-                trailing_ref = get_trailing_reference(side, price_for_stop, closes)
+            if ref_mode_norm == "dynamic":
+                trailing_ref = get_trailing_reference(side, closes)
                 trailing_len = trailing_ref.get("trailing_len")
                 trailing_name = trailing_ref.get("trailing_name")
-                trailing_value = trailing_ref.get("trailing_value")
             else:
                 trailing_len = wma_stop_len if wma_stop_len and wma_stop_len > 0 else None
-                trailing_name = f"wma_{trailing_len}" if trailing_len else None
-                trailing_value = wma(closes, trailing_len) if trailing_len else None
+                trailing_name = wma_name_from_len(trailing_len) if trailing_len else None
+
+            if trailing_len and not trailing_name:
+                trailing_name = wma_name_from_len(trailing_len)
 
             trailing_value_current = wma(closes, trailing_len) if trailing_len else None
             trailing_value_prev = wma(closes[:-1], trailing_len) if trailing_len else None
@@ -110,13 +114,15 @@ def tactica_salida_trailing_stop_wma(
                 trailing_value_prev=trailing_value_prev,
                 trailing_value_prevprev=trailing_value_prevprev,
                 wait_on_close=wait_on_close,
+                stop_rule_mode=stop_mode_norm,
                 state=stop_state,
                 buffer_ratio=STOP_BREAKOUT_BUFFER_PCT,
             )
 
+            trailing_name_txt = trailing_name or "-"
             trailing_val_txt = f"{trailing_value_current:.4f}" if trailing_value_current is not None else "N/D"
             print(
-                f"[STOP] trailing={trailing_name}({trailing_len})@{trailing_val_txt} action={stop_decision.get('action')}"
+                f"[STOP] trailing={trailing_name_txt}({trailing_len})@{trailing_val_txt} action={stop_decision.get('action')}"
             )
 
             if stop_decision.get("pending_trigger") is not None:

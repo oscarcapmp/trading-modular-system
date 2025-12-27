@@ -17,3 +17,14 @@ WMA_PACK_ORDER = [
 ]
 
 MAX_WMA_PACK_LEN = max(length for _, length in WMA_PACK_ORDER)
+
+WMA_FIB_LENGTHS = [length for _, length in WMA_PACK_ORDER]
+
+WMA_COLORS = {length: name for name, length in WMA_PACK_ORDER}
+
+
+def wma_name_from_len(length: int) -> str:
+    for name, len_val in WMA_PACK_ORDER:
+        if len_val == length:
+            return name
+    return f"WMA {length}"
