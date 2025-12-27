@@ -2,7 +2,7 @@ import time
 from infra_futuros import get_hlc_futures, wma
 
 
-ENTRY_BREAKOUT_BUFFER_PCT = 0.10
+ENTRY_BREAKOUT_BUFFER_PCT = 0.17
 
 
 def tactica_entrada_cruce_wma(
@@ -33,29 +33,31 @@ def tactica_entrada_cruce_wma(
 
             close_prev = closes[-2]
             close_prevprev = closes[-3]
+            close_current = closes[-1]
+            high_current = highs[-1]
+            low_current = lows[-1]
 
             if last_closed_close is None:
                 last_closed_close = close_prev
 
             new_closed = close_prev != last_closed_close
 
-            if new_closed:
-                if pending_breakout:
-                    candles_checked = pending_breakout["candles_checked"] + 1
+            # Evaluar breakout intravela y latcheado
+            if pending_breakout:
+                wma_current = wma(closes, wma_entry_len)
+                current_state = "above" if close_current > wma_current else "below"
+
+                if current_state == pending_breakout["reset_state"]:
+                    pending_breakout = None
+                else:
                     trigger = pending_breakout["trigger"]
                     trigger_side = pending_breakout["side"]
-                    breakout = highs[-2] >= trigger if trigger_side == "long" else lows[-2] <= trigger
-
+                    breakout = high_current >= trigger if trigger_side == "long" else low_current <= trigger
                     if breakout:
                         print(f"\n✅ [FUTUROS] Entrada {trigger_side.upper()} ejecutada por ruptura a {trigger:.4f}.")
                         return trigger
 
-                    if candles_checked >= 2:
-                        print("❌ [FUTUROS] Señal descartada por no romper el trigger en 2 velas.")
-                        pending_breakout = None
-                    else:
-                        pending_breakout["candles_checked"] = candles_checked
-
+            if new_closed:
                 if pending_breakout is None:
                     wma_prev = wma(closes[:-1], wma_entry_len)
                     wma_prevprev = wma(closes[:-2], wma_entry_len)
@@ -85,7 +87,7 @@ def tactica_entrada_cruce_wma(
                         pending_breakout = {
                             "side": side,
                             "trigger": trigger,
-                            "candles_checked": 0,
+                            "reset_state": prevprev_state,
                         }
 
                     if side == "short" and prevprev_state == "above" and prev_state == "below":
@@ -103,7 +105,7 @@ def tactica_entrada_cruce_wma(
                         pending_breakout = {
                             "side": side,
                             "trigger": trigger,
-                            "candles_checked": 0,
+                            "reset_state": prevprev_state,
                         }
 
                 last_closed_close = close_prev

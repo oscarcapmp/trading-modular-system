@@ -8,7 +8,7 @@ from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
 from freno_emergencia import compute_freno_emergencia_stop_level
 
 
-STOP_BREAKOUT_BUFFER_PCT = 0.10
+STOP_BREAKOUT_BUFFER_PCT = 0.17
 ATR_LEN_DEFAULT = 14
 ATR_MULT_DEFAULT = 1.5
 
