@@ -60,13 +60,13 @@ def close_market_reduceonly_pct(client, symbol: str, side: str, pct: float, simu
 
     side_norm = (side or "").lower()
     order_side = "SELL" if side_norm == "long" else "BUY"
-        order = client.new_order(
-            symbol=symbol,
-            side=order_side,
-            type="MARKET",
-            reduceOnly=True,
-            quantity=str(qty_close_str),
-        )
+    order = client.new_order(
+        symbol=symbol,
+        side=order_side,
+        type="MARKET",
+        reduceOnly=True,
+        quantity=str(qty_close_str),
+    )
 
     return {
         "orderId": order.get("orderId"),
