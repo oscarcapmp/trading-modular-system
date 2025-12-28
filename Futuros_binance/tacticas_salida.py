@@ -74,10 +74,12 @@ def tactica_salida_trailing_stop_wma(
             if storytelling_ctx and storytelling_ctx.get("enabled") and not storytelling_ctx.get("executed"):
                 target_price = storytelling_ctx.get("target")
                 pct_close = storytelling_ctx.get("pct", 0.50)
+                attempted = storytelling_ctx.get("attempted", False)
                 trigger_hit = (side == "long" and price_for_stop >= target_price) or (
                     side == "short" and price_for_stop <= target_price
                 )
-                if trigger_hit:
+                if trigger_hit and not attempted:
+                    storytelling_ctx["attempted"] = True
                     print("🍻 [TRAGUITO] Target alcanzado -> cerrando 50% MARKET reduceOnly...")
                     res = close_market_reduceonly_pct(
                         client=client,
@@ -86,9 +88,13 @@ def tactica_salida_trailing_stop_wma(
                         pct=pct_close,
                         simular=simular,
                     )
-                    storytelling_ctx["executed"] = True
-                    order_id = res.get("orderId", "sim")
-                    print(f"✅ [TRAGUITO] Ejecutado 50% orderId={order_id}")
+                    order_id = res.get("orderId")
+                    if order_id or res.get("simulated"):
+                        storytelling_ctx["executed"] = True
+                        print(f"✅ [TRAGUITO] Ejecutado 50% orderId={order_id or 'sim'}")
+                    else:
+                        reason = res.get("reason") or res.get("error") or "no_order"
+                        print(f"[WARN] TRAGUITO no ejecutado: {reason}")
 
             freno_triggered = False
             if emergency_brake_enabled and freno_stop_level is not None:

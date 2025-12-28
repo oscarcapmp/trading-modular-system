@@ -41,4 +41,5 @@ def storytelling_traguito_pa_las_almas(
         "target": float(target_price),
         "pct": 0.50,
         "executed": False,
+        "attempted": False,
     }

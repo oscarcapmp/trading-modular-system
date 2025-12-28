@@ -1,4 +1,4 @@
-from infra_futuros import format_quantity
+from infra_futuros import format_quantity, floor_to_step
 
 
 def close_market_reduceonly_pct(client, symbol: str, side: str, pct: float, simular: bool) -> dict:
@@ -18,8 +18,36 @@ def close_market_reduceonly_pct(client, symbol: str, side: str, pct: float, simu
     except Exception:
         return {"error": "invalid_position"}
 
+    try:
+        exch = client.exchange_info()
+        lot_filter = None
+        for s in exch.get("symbols", []):
+            if s.get("symbol") == symbol:
+                for f in s.get("filters", []):
+                    if f.get("filterType") == "LOT_SIZE":
+                        lot_filter = f
+                        break
+                break
+        if lot_filter:
+            step_size = float(lot_filter.get("stepSize", "0"))
+            min_qty = float(lot_filter.get("minQty", "0"))
+        else:
+            step_size = 0.0
+            min_qty = 0.0
+    except Exception:
+        step_size = 0.0
+        min_qty = 0.0
+
     qty_total = abs(amt)
-    qty_close = qty_total * pct
+    qty_close_raw = qty_total * pct
+    if step_size > 0:
+        qty_close = floor_to_step(qty_close_raw, step_size)
+    else:
+        qty_close = qty_close_raw
+
+    if qty_close <= 0 or (min_qty and qty_close < min_qty):
+        return {"skipped": True, "reason": "qty<minQty"}
+
     qty_close_str = format_quantity(qty_close)
 
     if simular:
@@ -32,13 +60,13 @@ def close_market_reduceonly_pct(client, symbol: str, side: str, pct: float, simu
 
     side_norm = (side or "").lower()
     order_side = "SELL" if side_norm == "long" else "BUY"
-    order = client.new_order(
-        symbol=symbol,
-        side=order_side,
-        type="MARKET",
-        reduceOnly=True,
-        quantity=qty_close_str,
-    )
+        order = client.new_order(
+            symbol=symbol,
+            side=order_side,
+            type="MARKET",
+            reduceOnly=True,
+            quantity=str(qty_close_str),
+        )
 
     return {
         "orderId": order.get("orderId"),
