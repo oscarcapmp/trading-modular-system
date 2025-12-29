@@ -14,7 +14,7 @@ from infra_futuros import (
 )
 from tacticas_entrada import tactica_entrada_cruce_wma
 from tacticas_salida import tactica_salida_trailing_stop_wma
-from tacticas_storytelling import storytelling_traguito_pa_las_almas
+from tacticas_storytelling import storytelling_traguito_pa_las_almas, target_touch_wma_ctx
 
 
 def _calc_atr_stop_info(client, symbol: str, interval: str, entry_price: float, side: str, atr_len: int, atr_mult: float):
@@ -140,6 +140,8 @@ def comprar_long_por_cruce_wma(
     max_lev: int,
     atr_mult: float = 1.5,
     emergency_brake_enabled: bool = True,
+    target_mode: str | None = None,
+    target_pct: float | None = None,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
         raw = input(prompt).strip()
@@ -215,7 +217,6 @@ def comprar_long_por_cruce_wma(
 
     raw_qty_est = poder_usar / entry_price_ref
     entry_order_id = None
-    storytelling_ctx = None
     storytelling_ctx = None
 
     try:
@@ -312,19 +313,24 @@ def comprar_long_por_cruce_wma(
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
-            if trailing_ref_mode == "dynamic":
-                storytelling_ctx = storytelling_traguito_pa_las_almas(
-                    client=client,
-                    symbol=symbol,
-                    side="long",
-                    entry_exec_price=entry_exec_price,
-                    interval=interval,
-                    simular=simular,
-                )
-
         except Exception as e:
             print(f"❌ Error enviando orden de apertura LONG en Futuros: {e}")
             return
+
+    if target_mode:
+        pct_to_use = target_pct if target_pct is not None else 0.50
+        if target_mode == "TRAGUITO":
+            storytelling_ctx = storytelling_traguito_pa_las_almas(
+                client=client,
+                symbol=symbol,
+                side="long",
+                entry_exec_price=entry_exec_price,
+                interval=interval,
+                simular=simular,
+                pct=pct_to_use,
+            )
+        elif target_mode in ["WMA233", "WMA377"]:
+            storytelling_ctx = target_touch_wma_ctx(target_mode, pct_to_use)
 
     print("\n=== Apertura LONG realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
@@ -368,6 +374,8 @@ def comprar_short_por_cruce_wma(
     max_lev: int,
     atr_mult: float = 1.5,
     emergency_brake_enabled: bool = True,
+    target_mode: str | None = None,
+    target_pct: float | None = None,
 ):
     def _leer_poder(prompt: str, default_val: float) -> float | None:
         raw = input(prompt).strip()
@@ -443,6 +451,7 @@ def comprar_short_por_cruce_wma(
 
     raw_qty_est = poder_usar / entry_price_ref
     entry_order_id = None
+    storytelling_ctx = None
 
     try:
         min_qty, max_qty, step_size = get_lot_size_filter_futures(client, symbol)
@@ -538,19 +547,24 @@ def comprar_short_por_cruce_wma(
             else:
                 print("\n⚠️ No se pudo leer la posición después de la orden. Se usa precio de referencia.\n")
 
-            if trailing_ref_mode == "dynamic":
-                storytelling_ctx = storytelling_traguito_pa_las_almas(
-                    client=client,
-                    symbol=symbol,
-                    side="short",
-                    entry_exec_price=entry_exec_price,
-                    interval=interval,
-                    simular=simular,
-                )
-
         except Exception as e:
             print(f"❌ Error enviando orden de apertura SHORT en Futuros: {e}")
             return
+
+    if target_mode:
+        pct_to_use = target_pct if target_pct is not None else 0.50
+        if target_mode == "TRAGUITO":
+            storytelling_ctx = storytelling_traguito_pa_las_almas(
+                client=client,
+                symbol=symbol,
+                side="short",
+                entry_exec_price=entry_exec_price,
+                interval=interval,
+                simular=simular,
+                pct=pct_to_use,
+            )
+        elif target_mode in ["WMA233", "WMA377"]:
+            storytelling_ctx = target_touch_wma_ctx(target_mode, pct_to_use)
 
     print("\n=== Apertura SHORT realizada (real o simulada). Iniciando TRAILING WMA STOP... ===\n")
 
@@ -597,6 +611,8 @@ def run_long_strategy(
     trading_power: float,
     max_lev: int,
     emergency_brake_enabled: bool = True,
+    target_mode: str | None = None,
+    target_pct: float | None = None,
 ):
     return comprar_long_por_cruce_wma(
         client=client,
@@ -614,6 +630,8 @@ def run_long_strategy(
         trading_power=trading_power,
         max_lev=max_lev,
         emergency_brake_enabled=emergency_brake_enabled,
+        target_mode=target_mode,
+        target_pct=target_pct,
     )
 
 
@@ -633,6 +651,8 @@ def run_short_strategy(
     trading_power: float,
     max_lev: int,
     emergency_brake_enabled: bool = True,
+    target_mode: str | None = None,
+    target_pct: float | None = None,
 ):
     return comprar_short_por_cruce_wma(
         client=client,
@@ -650,4 +670,6 @@ def run_short_strategy(
         trading_power=trading_power,
         max_lev=max_lev,
         emergency_brake_enabled=emergency_brake_enabled,
+        target_mode=target_mode,
+        target_pct=target_pct,
     )

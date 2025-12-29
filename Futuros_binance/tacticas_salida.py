@@ -6,7 +6,7 @@ from infra_futuros import format_quantity, get_hlc_futures, sonar_alarma, wma
 from Trailing_dinamico import get_trailing_reference
 from stop_clasico import init_stop_state, eval_stop_clasico_by_wma
 from freno_emergencia import compute_freno_emergencia_stop_level
-from target import close_market_reduceonly_pct
+from target import close_market_reduceonly_pct, should_trigger_touch_wma
 
 
 STOP_BREAKOUT_BUFFER_PCT = 0.17
@@ -69,18 +69,30 @@ def tactica_salida_trailing_stop_wma(
             low_current = lows[-1]
             high_prev = highs[-2]
             low_prev = lows[-2]
+            price_now = close_current
             price_for_stop = close_prev if wait_on_close else close_current
 
-            if storytelling_ctx and storytelling_ctx.get("enabled") and not storytelling_ctx.get("executed"):
-                target_price = storytelling_ctx.get("target")
+            if storytelling_ctx and not storytelling_ctx.get("executed") and not storytelling_ctx.get("attempted"):
+                mode = storytelling_ctx.get("mode")
                 pct_close = storytelling_ctx.get("pct", 0.50)
-                attempted = storytelling_ctx.get("attempted", False)
-                trigger_hit = (side == "long" and price_for_stop >= target_price) or (
-                    side == "short" and price_for_stop <= target_price
-                )
-                if trigger_hit and not attempted:
+                trigger_hit = False
+
+                if mode == "TRAGUITO":
+                    target_price = storytelling_ctx.get("target_price")
+                    if target_price is not None:
+                        trigger_hit = (side == "long" and price_now >= target_price) or (
+                            side == "short" and price_now <= target_price
+                        )
+                elif mode in ["WMA233", "WMA377"]:
+                    wma_len = 233 if mode == "WMA233" else 377
+                    wma_now = wma(closes, wma_len)
+                    if wma_now is not None:
+                        trigger_hit = should_trigger_touch_wma(side, price_now, wma_now)
+
+                if trigger_hit:
                     storytelling_ctx["attempted"] = True
-                    print("🍻 [TRAGUITO] Target alcanzado -> cerrando 50% MARKET reduceOnly...")
+                    mode_txt = mode or "TARGET"
+                    print(f"🎯 [TARGET] {mode_txt} disparado -> cerrando {pct_close*100:.2f}% MARKET reduceOnly...")
                     res = close_market_reduceonly_pct(
                         client=client,
                         symbol=symbol,
@@ -91,10 +103,10 @@ def tactica_salida_trailing_stop_wma(
                     order_id = res.get("orderId")
                     if order_id or res.get("simulated"):
                         storytelling_ctx["executed"] = True
-                        print(f"✅ [TRAGUITO] Ejecutado 50% orderId={order_id or 'sim'}")
+                        print(f"✅ [TARGET] {mode_txt} ejecutado orderId={order_id or 'sim'}")
                     else:
                         reason = res.get("reason") or res.get("error") or "no_order"
-                        print(f"[WARN] TRAGUITO no ejecutado: {reason}")
+                        print(f"[WARN] {mode_txt} no ejecutado: {reason}")
 
             freno_triggered = False
             if emergency_brake_enabled and freno_stop_level is not None:

@@ -107,6 +107,39 @@ def flujo_nueva_operacion(client):
 
     wait_on_close = _leer_bool("¿Esperar cierre REAL de la vela para el STOP? (true/false) [true]: ", default=True)
 
+    print("\nTarget opcional:")
+    print("1) Traguito (2ATR)")
+    print("2) WMA233")
+    print("3) WMA377")
+    print("4) Ninguna")
+    target_default = "1" if trailing_ref_mode == "dynamic" else "4"
+    target_choice = input(f"Elige una opción (1/2/3/4) [{target_default}]: ").strip() or target_default
+    if target_choice not in ["1", "2", "3", "4"]:
+        target_choice = target_default
+
+    target_mode = None
+    target_pct = None
+    if target_choice in ["1", "2", "3"]:
+        while True:
+            pct_raw = input("Porcentaje a vender (1-100, ej: 50): ").strip() or "50"
+            try:
+                pct_val = float(pct_raw)
+            except ValueError:
+                print("❌ Porcentaje inválido. Usa un número entre 1 y 100.")
+                continue
+            if pct_val < 1 or pct_val > 100:
+                print("❌ Porcentaje fuera de rango (1-100). Intenta de nuevo.")
+                continue
+            target_pct = pct_val / 100.0
+            break
+
+        if target_choice == "1":
+            target_mode = "TRAGUITO"
+        elif target_choice == "2":
+            target_mode = "WMA233"
+        elif target_choice == "3":
+            target_mode = "WMA377"
+
     if wma_entry_len == 0:
         print("Entrada MARKET inmediata (sin táctica de cruce).")
 
@@ -137,6 +170,10 @@ def flujo_nueva_operacion(client):
     print(f"Apalancamiento max: {max_lev}x")
     print(f"Balance USDT:       {balance_usdt:.4f}")
     print(f"Poder de trading:   {trading_power:.4f} USDT\n")
+    if target_mode:
+        print(f"Target seleccionado: {target_mode} @ {target_pct*100:.2f}%")
+    else:
+        print("Target seleccionado: Ninguna")
 
     if side_input == "long":
         run_long_strategy(
@@ -155,6 +192,8 @@ def flujo_nueva_operacion(client):
             trading_power=trading_power,
             max_lev=max_lev,
             emergency_brake_enabled=emergency_brake_enabled,
+            target_mode=target_mode,
+            target_pct=target_pct,
         )
     else:
         run_short_strategy(
@@ -173,6 +212,8 @@ def flujo_nueva_operacion(client):
             trading_power=trading_power,
             max_lev=max_lev,
             emergency_brake_enabled=emergency_brake_enabled,
+            target_mode=target_mode,
+            target_pct=target_pct,
         )
 
 

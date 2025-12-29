@@ -8,6 +8,7 @@ def storytelling_traguito_pa_las_almas(
     entry_exec_price: float,
     interval: str,
     simular: bool,
+    pct: float = 0.50,
 ) -> dict | None:
     try:
         highs, lows, closes = get_hlc_futures(client, symbol, interval, limit=120)
@@ -32,14 +33,18 @@ def storytelling_traguito_pa_las_almas(
     print("# traguito pa las almas")
     print(
         f"[STORY] symbol={symbol} side={side.upper()} entry_real={entry_exec_price:.4f} "
-        f"ATR14={atr_val:.4f} target={target_price:.4f} pct=50%"
+        f"ATR14={atr_val:.4f} target={target_price:.4f} pct={pct*100:.2f}%"
     )
 
     return {
-        "name": "traguito_pa_las_almas",
-        "enabled": True,
-        "target": float(target_price),
-        "pct": 0.50,
-        "executed": False,
+        "mode": "TRAGUITO",
+        "target_price": float(target_price),
+        "pct": float(pct),
         "attempted": False,
+        "executed": False,
     }
+
+
+def target_touch_wma_ctx(mode: str, pct: float) -> dict:
+    # mode: "WMA233" o "WMA377"
+    return {"mode": mode, "pct": float(pct), "attempted": False, "executed": False}
